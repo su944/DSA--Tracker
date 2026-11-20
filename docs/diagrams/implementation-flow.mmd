@@ -1,0 +1,13 @@
+flowchart TD
+    Review{"Plan approved?"}
+    Revise["Revise the plan"]
+    Setup["1. Local setup<br/>Start the app and verify SQLite persistence"]
+    Catalog["2. Catalog and progress<br/>Add and edit problems, search and filter, save status and dates"]
+    Planning["3. Goals and daily planner<br/>Count solves toward targets and schedule work by date"]
+    Dashboard["4. Revisions and dashboard<br/>Schedule reviews and verify analytics against current records"]
+    Exchange["5. Import and export<br/>Round-trip JSON and CSV ZIP, test catalog CSV and rollback"]
+    Verify["6. End-to-end verification<br/>Run the full workflow offline and document setup and backup"]
+
+    Review -->|Changes requested| Revise --> Review
+    Review -->|Approved| Setup
+    Setup --> Catalog --> Planning --> Dashboard --> Exchange --> Verify

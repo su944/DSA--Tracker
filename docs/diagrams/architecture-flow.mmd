@@ -1,0 +1,22 @@
+flowchart TB
+    Browser["React, TypeScript, Tailwind CSS<br/>Local browser UI"]
+    API["Spring Boot REST controllers<br/>Java 21, Maven, /api/v1"]
+    Storage["Spring JDBC<br/>Versioned migrations and transactions"]
+    Database[("Local SQLite database")]
+    Files["Local files<br/>JSON snapshot, CSV ZIP, catalog CSV"]
+
+    subgraph Services["Reusable backend application services"]
+        Catalog["Catalog<br/>LeetCode ID, title, link, difficulty, multiple topics<br/>Title or ID search, topic, difficulty and status filters"]
+        Progress["Progress<br/>One record per problem<br/>Status, attempted date, solved date, comments"]
+        Goals["Goals<br/>Daily, weekly and topic targets<br/>Count eligible solved problems"]
+        Planner["Daily planner<br/>Schedule, move or remove problems by date"]
+        Revisions["Revisions<br/>Due dates, manual rescheduling and review completion"]
+        Dashboard["Dashboard and analytics<br/>Status totals, solve trends, difficulty and topic breakdowns<br/>Goal progress, today's plan and due reviews"]
+        Exchange["Import and export<br/>Preview and validate before applying changes"]
+        Progress -->|Updates solve state| Revisions
+    end
+
+    Browser -->|Loopback HTTP| API
+    Browser <-->|Select or download| Files
+    API --> Services
+    Services --> Storage --> Database

@@ -1,0 +1,40 @@
+# DSA Tracker Architecture
+
+## Application and feature flow
+
+![Local browser, REST API, application services, JDBC, and SQLite, with local file exchange](diagrams/architecture-flow.png)
+
+[Editable Mermaid source](diagrams/architecture-flow.mmd)
+
+The dashboard reads current problem and progress records, goal results, the day's planner entries, and due reviews. Goal calculations use solved dates and topic membership. A future MCP adapter can call the same application services.
+
+## Runtime and stack
+
+Run a React and TypeScript frontend styled with Tailwind CSS against a local Java 21 Spring Boot backend built with Maven. The backend owns an on-disk SQLite database at a configurable path. Bind the backend to loopback by default. Serve the built frontend from Spring Boot for daily use and use a frontend development proxy for API requests during development. Bundle frontend assets locally so ordinary use needs no remote fonts, scripts, or APIs.
+
+The browser stores transient UI state such as pending edits and selected filters. SQLite is the authoritative store for application data. Resolve calendar dates in one configurable application time zone, defaulting to the system zone. Pass an injectable clock to services that need to determine today.
+
+## Backend boundaries
+
+- **REST controllers** parse requests, map transport DTOs and validation errors, and delegate to application services. Expose a versioned API under `/api/v1` for problems, progress, goals, planner entries, revisions, dashboard queries, and file exchange.
+- **Application services** own problem and progress changes, goal calculations, planner operations, revision scheduling, dashboard queries, and import/export orchestration. Define service inputs and results independently of HTTP requests and responses. Future adapters can invoke these same use cases.
+- **Persistence** uses Spring JDBC and parameterized SQL. Manage schema changes through ordered, versioned SQL migrations. Enable SQLite foreign keys on every connection. Keep write transactions short and make cross-record changes atomic, including problem creation with initial progress, solving with revision scheduling, and imports.
+
+Validate individual fields at the application boundary and enforce domain rules in application services. Use database uniqueness, foreign keys, and checks for invariants that SQLite can enforce. Return structured validation errors that the frontend can associate with fields or import rows.
+
+## Data model
+
+- **Problem** stores an internal ID, unique LeetCode ID, title, link, and difficulty. A **Topic** stores a display name and a case-insensitive unique name. A junction table maps problems to topics.
+- **Progress** uses the problem ID as its primary key. It stores status, attempted date, solved date, and comments. Create exactly one row with each problem.
+- **Goal** stores a type, inclusive period start and end, target count, and a topic reference for topic goals. Validate period boundaries according to goal type.
+- **Planner entry** references a problem and stores its scheduled date. The problem and date pair is unique.
+- **Revision schedule** uses the problem ID as its primary key and stores the next due date, the optional latest reviewed date, and whether the schedule still follows the original solved date. This lets date corrections update the initial schedule while preserving manual and reviewed schedules.
+
+Store date-only values as ISO `YYYY-MM-DD` text and represent them as `LocalDate` in Java. Use transactions to keep dependent rows consistent when progress changes or a full restore replaces the dataset. Index the columns used to query by date and topic. Derive goal counts and dashboard summaries from current records without a separate analytics store.
+
+## Import and export contracts
+
+- Use one logical, versioned snapshot for complete exports. JSON represents it directly. The CSV archive contains separate CSV files for problems, topics, problem-topic links, progress, goals, planner entries, and revisions, plus a format version file.
+- Use portable keys within a snapshot to resolve references. Use LeetCode IDs for problem references and preserve topic identities when rebuilding goal and problem associations. Preserve comments, including line breaks and quotes, through UTF-8 serialization and CSV quoting.
+- Parse and validate complete files before applying changes. Preview counts, conflicts, and errors such as duplicate keys, invalid progress dates, and missing references. Revalidate the submitted file when applying it. Replace all tracker data together in one transaction for a confirmed full restore.
+- Define the standalone catalog CSV separately from the full snapshot. Use a header row and a documented representation for multiple topics. Upsert catalog fields by LeetCode ID, initialize progress for new problems, and apply the import as a single transaction.
