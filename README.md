@@ -4,7 +4,49 @@ A local-first workspace for data structures and algorithms practice. Use Topics 
 
 See the [implementation plan](docs/IMPLEMENTATION_PLAN.md) and [architecture](docs/ARCHITECTURE.md) for the build sequence and system boundaries.
 
-## Prerequisites
+## Run with Docker
+
+Install Docker Desktop or Docker Engine with the Compose plugin. Docker is the only runtime prerequisite on a new machine. The first build needs internet access to download images and dependencies. Java, Maven, Node.js, npm and SQLite are supplied by the images or the application.
+
+If you have an existing local database, follow **Move an existing database into Docker** before first startup. Otherwise, run this from the repository root:
+
+```sh
+docker compose up -d --build
+```
+
+Open [http://127.0.0.1:8080](http://127.0.0.1:8080). Nginx serves the frontend and forwards same-origin API requests to the private backend. The frontend starts after the backend health check passes. The port requires your native backend to be stopped.
+
+| Task | Command |
+| --- | --- |
+| Check service state | `docker compose ps` |
+| Follow logs | `docker compose logs -f backend frontend` |
+| Stop both services | `docker compose stop` |
+| Restart both services | `docker compose restart` |
+| Check the API through Nginx | `curl -fsS http://127.0.0.1:8080/api/health` |
+
+SQLite lives at `/data/tracker.sqlite` in the `tracker-data` named volume. Settings backups are stored in the separate `tracker-backups` volume at `/backups`. Both volumes survive container recreation. Keep the same Compose project name to reconnect to them. Avoid volume deletion commands. Set `TRACKER_TIME_ZONE` in an optional root `.env` to match your native tracker dates. Containers use their system time zone when it is omitted.
+
+For backups, use **Settings → SQLite backups**. To restore one, enter `RESTORE` in the app and run `docker compose restart backend` to apply the queued restore. The application creates a pre-restore backup in the same volume. To keep a copy outside Docker, create a backup in Settings, then run `docker compose -f /absolute/path/to/compose.yaml cp backend:/backups ./tracker-backups-copy`. Choose a destination outside the checkout. A copied SQLite snapshot can also serve as the source for the migration procedure on a new machine.
+
+If startup fails, check `docker compose ps` and backend logs first. For a port conflict, stop the native backend or other service using port 8080. If the browser shows a gateway error immediately after backend recreation, wait for the backend health check to pass and reload.
+
+### Move an existing database into Docker
+
+1. Stop the native backend and close other applications using its SQLite file. Keep the original file and its sidecars together. The native launcher defaults to `backend/data/tracker.sqlite`. If you set `TRACKER_DB_PATH`, use that file instead. Relative values resolve from the native backend directory.
+2. From the repository root, build the backend and run the migration before starting the stack.
+
+   ```sh
+   docker compose stop
+   docker compose build backend
+   ./scripts/migrate-docker-db.sh "$PWD/backend/data/tracker.sqlite"
+   docker compose up -d --build
+   ```
+
+3. Open the tracker and check your problems, progress and plans. Keep the original as a recovery copy. Docker and native runs use independent databases after the copy.
+
+The migration opens the source through a read-only mount, copies committed data using SQLite, checks integrity and foreign keys, and installs the snapshot only if Docker storage has no existing database. Existing Docker data requires a deliberate backup and restore decision if the script refuses to proceed. Native backup directories stay on the host.
+
+## Native development prerequisites
 
 - JDK 21 and Maven 3.9 or later. Confirm that `mvn -version` reports Java 21.
 - Node.js 24 LTS and npm 11. Confirm with `node --version` and `npm --version`.

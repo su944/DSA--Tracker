@@ -1,0 +1,36 @@
+services:
+  backend:
+    build: ./backend
+    environment:
+      SERVER_ADDRESS: 0.0.0.0
+      SERVER_PORT: "8080"
+      SERVER_SHUTDOWN: graceful
+      SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE: 25s
+      TRACKER_DB_PATH: /data/tracker.sqlite
+      TRACKER_BACKUP_ROOT: /backups
+      TRACKER_TIME_ZONE: ${TRACKER_TIME_ZONE:-}
+    volumes:
+      - tracker-data:/data
+      - tracker-backups:/backups
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "--max-time", "2", "http://127.0.0.1:8080/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+    init: true
+    stop_grace_period: 35s
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+    restart: unless-stopped
+
+volumes:
+  tracker-data:
+  tracker-backups:
