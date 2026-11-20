@@ -1,6 +1,6 @@
 # DSA Tracker
 
-A local-first workspace for data structures and algorithms practice. Milestone 1 provides the application shell, local SQLite setup, and a Dashboard connection check. The other navigation destinations are placeholders.
+A local-first workspace for data structures and algorithms practice. Use Topics to organize your catalog, then use Problems to add, filter, and update your practice records. The Dashboard displays the local connection status.
 
 See the [implementation plan](docs/IMPLEMENTATION_PLAN.md) and [architecture](docs/ARCHITECTURE.md) for the build sequence and system boundaries.
 
@@ -34,11 +34,19 @@ Check the backend directly with `curl -i http://127.0.0.1:8080/api/health`. The 
 
 ## Local database
 
-The commands above create `backend/data/tracker.sqlite` on first startup. The same file is reused across runs. Flyway applies ordered SQL migrations from `backend/src/main/resources/db/migration/` and records them in the database. The first migration establishes the migration baseline. Spring Data JPA is configured with the Hibernate community SQLite dialect. Flyway owns schema changes.
+The commands above create `backend/data/tracker.sqlite` on first startup. The same file is reused across runs. Flyway applies ordered SQL migrations from `backend/src/main/resources/db/migration/` and records them in the database. V1 establishes the migration baseline. V2 adds the catalog, topic links, and one progress record per problem. Spring Data JPA is configured with the Hibernate community SQLite dialect. Flyway owns schema changes.
 
 - Set `TRACKER_DB_PATH` to use a different database file. Relative paths resolve from the backend process working directory.
 - Set `TRACKER_TIME_ZONE` to an IANA time zone such as `Asia/Kolkata`. The default is the host time zone.
 - Keep local database and environment files out of source control.
+
+## Catalog and progress API
+
+- `GET /api/problems` lists problems. Filters are `q` (LeetCode ID or title), repeatable `topic` IDs (matches any selected topic), `difficulty`, and `status`. Combine filters with zero-based `page`, `size` from 1 to 100, and `sort=field,asc|desc`. Supported fields are `id`, `leetcodeId`, `title`, `createdAt`, and `updatedAt`. Defaults are page 0, size 20, and ascending LeetCode ID.
+- `POST /api/problems` creates a problem. `GET`, `PUT`, and `DELETE /api/problems/{id}` read, replace catalog fields, and delete by the internal ID. Create and edit accept `leetcodeId`, `title`, `url`, `difficulty`, and at least one existing ID in `topicIds`. Links normalize to `https://leetcode.com/problems/{slug}/`.
+- `PATCH /api/problems/{id}/progress` accepts `status`, `attemptedDate`, `solvedDate`, and `comments`. Dates use `YYYY-MM-DD`. Omitted fields keep applicable values, and newly required dates default to today in the tracker time zone. Solved can have an empty attempted date. Attempted clears the solved date, and Not Started clears both dates. Send an empty string to clear comments.
+- `GET` and `POST /api/topics` list and create topics. `GET`, `PUT`, and `DELETE /api/topics/{id}` read, rename, and delete a topic. Names are trimmed and compared case-insensitively. Remove a topic from all linked problems before deleting it. Deleting a problem removes its progress and topic links, and keeps the topics.
+- Both resources also support the `/api/v1` prefix. The API returns `{ "code": "...", "message": "...", "fields": {} }` for invalid input, missing records, and catalog conflicts.
 
 ## Verify and package
 

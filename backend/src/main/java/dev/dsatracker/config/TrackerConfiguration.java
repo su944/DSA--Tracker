@@ -35,6 +35,8 @@ class TrackerConfiguration {
         var sqliteConfig = new SQLiteConfig();
         sqliteConfig.enforceForeignKeys(true);
         sqliteConfig.setBusyTimeout(5_000);
+        // Reserve the SQLite writer before a service reads data it will change.
+        sqliteConfig.setTransactionMode(SQLiteConfig.TransactionMode.IMMEDIATE);
         var sqlite = new SQLiteDataSource(sqliteConfig);
         sqlite.setUrl("jdbc:sqlite:" + database);
 

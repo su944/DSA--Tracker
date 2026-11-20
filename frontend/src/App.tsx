@@ -4,17 +4,24 @@ import {
 } from 'lucide-react'
 import { Link, NavLink, Outlet, Route, Routes } from 'react-router-dom'
 import { useBackendHealth, type BackendHealth } from './useBackendHealth'
+import { ProblemLibrary } from './catalog/ProblemLibrary'
+import { ProblemForm } from './catalog/ProblemForm'
+import { ProblemDetails } from './catalog/ProblemDetails'
+import { TopicManagement } from './catalog/TopicManagement'
 
 const featurePages = [
-  { name: 'Problems', path: '/problems', icon: ListChecks, description: 'Manage your problem catalog and practice progress.' },
-  { name: 'Topics', path: '/topics', icon: Tags, description: 'Browse the topics used to organize your problem catalog.' },
   { name: 'Goals', path: '/goals', icon: Target, description: 'Set daily, weekly, and topic-based practice targets.' },
   { name: 'Daily Planner', path: '/planner', icon: CalendarDays, description: 'Schedule problems for a practice date.' },
   { name: 'Revisions', path: '/revisions', icon: BookOpen, description: 'See upcoming reviews and revisit solved problems.' },
   { name: 'Analytics', path: '/analytics', icon: ChartNoAxesColumn, description: 'Review solve trends and breakdowns by difficulty and topic.' },
 ] as const
 
-const destinations = [{ name: 'Dashboard', path: '/', icon: LayoutDashboard }, ...featurePages]
+const destinations = [
+  { name: 'Dashboard', path: '/', icon: LayoutDashboard },
+  { name: 'Problems', path: '/problems', icon: ListChecks },
+  { name: 'Topics', path: '/topics', icon: Tags },
+  ...featurePages,
+]
 
 const connection = {
   checking: { label: 'Checking backend', detail: 'Checking the local API and database.' },
@@ -93,6 +100,11 @@ export function App() {
     <Routes>
       <Route element={<Shell />}>
         <Route index element={<Dashboard />} />
+        <Route path="/problems" element={<ProblemLibrary />} />
+        <Route path="/problems/new" element={<ProblemForm />} />
+        <Route path="/problems/:id" element={<ProblemDetails />} />
+        <Route path="/problems/:id/edit" element={<ProblemForm />} />
+        <Route path="/topics" element={<TopicManagement />} />
         {featurePages.map((destination) => (
           <Route key={destination.path} path={destination.path} element={<Placeholder {...destination} />} />
         ))}
