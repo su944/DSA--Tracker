@@ -87,9 +87,15 @@ function CalendarContent({ calendar, pickerDate, onDate, onPick, onChanged }: Ca
           <button type="button" className="catalog-button" disabled={!previous} onClick={() => onDate(view, previous)}>Previous {view === 'WEEK' ? 'week' : 'day'}</button>
           <button type="button" className="catalog-button" onClick={() => onDate(view, calendar.today)}>Today</button>
           <button type="button" className="catalog-button" disabled={!next} onClick={() => onDate(view, next)}>Next {view === 'WEEK' ? 'week' : 'day'}</button>
-          <label>Calendar date<input type="date" min="0001-01-01" max="9999-12-31" value={date} onChange={(event) => {
-            if (event.currentTarget.validity.valid && event.target.value) onDate(view, event.target.value)
-          }} /></label>
+          <form className="catalog-actions tracker-date-form" key={date} onSubmit={(event) => {
+            event.preventDefault()
+            const selected = String(new FormData(event.currentTarget).get('date'))
+            onDate(view, selected)
+          }}>
+            <label>Calendar date<input name="date" type="date" min="0001-01-01" max="9999-12-31"
+              required defaultValue={date} /></label>
+            <button type="submit" className="catalog-button">Go to date</button>
+          </form>
         </div>
       </section>
       {pickerDate && <ProblemPicker key={pickerDate} date={pickerDate}

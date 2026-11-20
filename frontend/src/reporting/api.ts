@@ -1,10 +1,11 @@
 import { request, type Difficulty, type ProgressStatus } from '../catalog/api'
 import type { Day, Goal } from '../planning/api'
+import type { RevisionCounts } from '../revision/api'
 
 export const ranges = { '7': 'Last 7 days', '30': 'Last 30 days', '90': 'Last 90 days', all: 'All time' } as const
 export type Range = keyof typeof ranges
 export type Summary = { total: number; solved: number; attempted: number; notStarted: number }
-export type Today = { date: string; plan: Day; goals: Goal[] }
+export type Today = { date: string; plan: Day; goals: Goal[]; revisions: RevisionCounts }
 export type TopicStats = { topicId: number; name: string; total: number; solved: number; remaining: number }
 export type DifficultyStats = { difficulty: Difficulty; solved: number }
 export type ActivityDay = { date: string; solved: number }

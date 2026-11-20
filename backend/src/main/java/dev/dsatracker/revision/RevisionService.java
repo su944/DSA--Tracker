@@ -1,0 +1,123 @@
+package dev.dsatracker.revision;
+
+import dev.dsatracker.api.ApiException;
+import dev.dsatracker.catalog.DateColumns;
+import dev.dsatracker.catalog.ProblemRepository;
+import dev.dsatracker.catalog.ProgressStatus;
+import dev.dsatracker.revision.RevisionDtos.Counts;
+import dev.dsatracker.revision.RevisionDtos.Filter;
+import dev.dsatracker.revision.RevisionDtos.Queue;
+import dev.dsatracker.revision.RevisionDtos.Status;
+import dev.dsatracker.revision.RevisionDtos.Task;
+import java.time.Clock;
+import java.time.LocalDate;
+import java.util.Objects;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class RevisionService {
+    private static final int INTERVAL_DAYS = 7;
+    private final RevisionRepository revisions;
+    private final ProblemRepository problems;
+    private final Clock clock;
+    private final DateColumns.Timestamp timestamps = new DateColumns.Timestamp();
+
+    RevisionService(RevisionRepository revisions, ProblemRepository problems, Clock clock) {
+        this.revisions = revisions;
+        this.problems = problems;
+        this.clock = clock;
+    }
+
+    @Transactional(readOnly = true)
+    Queue queue(Filter filter) {
+        var today = LocalDate.now(clock);
+        return new Queue(today, counts(today), revisions.list(today, filter));
+    }
+
+    public Counts counts(LocalDate date) {
+        return revisions.counts(date);
+    }
+
+    Task get(long id) {
+        if (id <= 0) throw ApiException.invalid("id", "Revision ID must be positive.");
+        return revisions.find(id).orElseThrow(() -> ApiException.missing("Revision not found."));
+    }
+
+    @Transactional
+    Task schedule(long problemId, LocalDate date) {
+        checkedDate(date);
+        requireSolved(problemId);
+        long id = revisions.insert(problemId, date, now(), false).orElseThrow(RevisionService::duplicate);
+        return get(id);
+    }
+
+    @Transactional
+    Task move(long id, LocalDate date) {
+        checkedDate(date);
+        var task = requireScheduled(id);
+        requireSolved(task.problemId());
+        if (revisions.activeOn(task.problemId(), date, id)) throw duplicate();
+        revisions.move(id, date, now());
+        return get(id);
+    }
+
+    @Transactional
+    Task finish(long id, Status status) {
+        var task = get(id);
+        if (task.status() == status) return task;
+        if (task.status() != Status.SCHEDULED) {
+            throw ApiException.conflict("status", "Only scheduled revisions can be changed.");
+        }
+        String timestamp = now();
+        if (status == Status.COMPLETED) {
+            requireSolved(task.problemId());
+        }
+        revisions.close(id, status, timestamp);
+        if (status == Status.COMPLETED) {
+            revisions.insert(task.problemId(), LocalDate.now(clock).plusDays(INTERVAL_DAYS), timestamp, false);
+        }
+        return get(id);
+    }
+
+    @Transactional
+    public void reconcile(long problemId, ProgressStatus before, LocalDate oldSolved,
+                          ProgressStatus after, LocalDate solved) {
+        if (after != ProgressStatus.SOLVED) {
+            if (before == ProgressStatus.SOLVED) revisions.cancelForProblem(problemId, now());
+        } else if (before != ProgressStatus.SOLVED) {
+            revisions.insert(problemId, solved.plusDays(INTERVAL_DAYS), now(), true);
+        } else if (!Objects.equals(oldSolved, solved)) {
+            revisions.correctInitialDate(problemId, solved.plusDays(INTERVAL_DAYS), now());
+        }
+    }
+
+    private Task requireScheduled(long id) {
+        var task = get(id);
+        if (task.status() != Status.SCHEDULED) {
+            throw ApiException.conflict("status", "Only scheduled revisions can be changed.");
+        }
+        return task;
+    }
+
+    private void requireSolved(long id) {
+        var reference = problems.findById(id).orElseThrow(() -> ApiException.missing("Problem not found.")).reference();
+        if (reference.status() != ProgressStatus.SOLVED) {
+            throw ApiException.conflict("problemId", "Only solved problems can be scheduled for revision.");
+        }
+    }
+
+    private static void checkedDate(LocalDate date) {
+        if (date.getYear() < 1 || date.getYear() > 9999) {
+            throw ApiException.invalid("date", "Enter a date with a year from 0001 to 9999.");
+        }
+    }
+
+    private static ApiException duplicate() {
+        return ApiException.conflict("date", "This problem already has a scheduled revision on that date.");
+    }
+
+    private String now() {
+        return timestamps.convertToDatabaseColumn(clock.instant());
+    }
+}

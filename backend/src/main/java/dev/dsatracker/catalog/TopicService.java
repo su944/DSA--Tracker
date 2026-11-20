@@ -9,7 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-class TopicService {
+public class TopicService {
     private final TopicRepository topics;
     private final ProblemRepository problems;
     private final Clock clock;
@@ -37,6 +37,12 @@ class TopicService {
             throw duplicateName();
         }
         return TopicView.from(topics.save(topic));
+    }
+
+    @Transactional
+    public long resolveId(String name) {
+        return topics.findByNameKey(Topic.comparisonKey(name))
+                .map(topic -> topic.id).orElseGet(() -> create(name).id());
     }
 
     @Transactional

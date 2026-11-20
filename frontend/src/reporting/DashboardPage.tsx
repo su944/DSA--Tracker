@@ -80,7 +80,7 @@ function SummaryCards({ summary }: { summary: Summary }) {
 const taskLabels = { PLANNED: 'Planned', COMPLETED: 'Completed', SKIPPED: 'Skipped' } as const
 
 function TodayPanels({ today }: { today: Today }) {
-  const { plan, goals } = today
+  const { plan, goals, revisions } = today
   return (
     <div className="report-grid">
       <section className="catalog-panel report-card" aria-labelledby="today-plan-heading">
@@ -123,6 +123,15 @@ function TodayPanels({ today }: { today: Today }) {
             ))}
           </ul>
         )}
+      </section>
+      <section className="catalog-panel report-card report-revisions" aria-labelledby="today-revisions-heading">
+        <div className="report-header">
+          <h2 id="today-revisions-heading">Revision queue</h2>
+          <Link to="/revisions" className="catalog-link">Open revisions</Link>
+        </div>
+        <div className="planning-counts">
+          <span>{revisions.dueToday} due today</span><span>{revisions.overdue} overdue</span><span>{revisions.upcoming} upcoming</span>
+        </div>
       </section>
     </div>
   )

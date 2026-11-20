@@ -8,12 +8,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import tools.jackson.databind.DatabindException;
 
-@RestControllerAdvice(basePackages = {"dev.dsatracker.catalog", "dev.dsatracker.planning", "dev.dsatracker.reporting"})
+@RestControllerAdvice(basePackages = {"dev.dsatracker.catalog", "dev.dsatracker.planning", "dev.dsatracker.reporting",
+        "dev.dsatracker.revision", "dev.dsatracker.exchange", "dev.dsatracker.backup"})
 class ApiErrorHandler {
     record ErrorResponse(String code, String message, Map<String, String> fields) {}
 
@@ -45,6 +48,18 @@ class ApiErrorHandler {
     ResponseEntity<ErrorResponse> handleParameter(MethodArgumentTypeMismatchException exception) {
         return response(HttpStatus.BAD_REQUEST, "Invalid request parameter.",
                 Map.of(exception.getName(), "Invalid value."));
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    ResponseEntity<ErrorResponse> handleMissingParameter(MissingServletRequestParameterException exception) {
+        return response(HttpStatus.BAD_REQUEST, "Provide the required request parameter.",
+                Map.of(exception.getParameterName(), "This parameter is required."));
+    }
+
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    ResponseEntity<ErrorResponse> handleMissingPart(MissingServletRequestPartException exception) {
+        return response(HttpStatus.BAD_REQUEST, "Provide the required file.",
+                Map.of(exception.getRequestPartName(), "This file is required."));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)

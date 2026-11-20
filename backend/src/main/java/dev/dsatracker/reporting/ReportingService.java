@@ -11,6 +11,7 @@ import dev.dsatracker.reporting.ReportingDtos.Recent;
 import dev.dsatracker.reporting.ReportingDtos.Summary;
 import dev.dsatracker.reporting.ReportingDtos.Today;
 import dev.dsatracker.reporting.ReportingDtos.TopicStats;
+import dev.dsatracker.revision.RevisionService;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
@@ -24,12 +25,14 @@ class ReportingService {
     private final GoalService goals;
     private final PlannerService planner;
     private final Clock clock;
+    private final RevisionService revisions;
 
-    ReportingService(ReportingRepository reports, GoalService goals, PlannerService planner, Clock clock) {
+    ReportingService(ReportingRepository reports, GoalService goals, PlannerService planner, Clock clock, RevisionService revisions) {
         this.reports = reports;
         this.goals = goals;
         this.planner = planner;
         this.clock = clock;
+        this.revisions = revisions;
     }
 
     Summary summary() {
@@ -40,7 +43,7 @@ class ReportingService {
     Today today() {
         LocalDate date = LocalDate.now(clock);
         var plan = planner.calendar(date, View.DAY).days().getFirst();
-        return new Today(date, plan, goals.activeOn(date));
+        return new Today(date, plan, goals.activeOn(date), revisions.counts(date));
     }
 
     List<TopicStats> topics(String range) {

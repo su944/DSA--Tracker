@@ -233,7 +233,7 @@ class PlanningIntegrationTest {
         try (var connection = DriverManager.getConnection(url); var sql = connection.createStatement()) {
             sql.executeUpdate("INSERT INTO topics(name, name_key, created_at) VALUES ('Arrays','arrays','2026-11-20T00:00:00.000Z')");
         }
-        var current = Flyway.configure().dataSource(url, "", "").load();
+        var current = Flyway.configure().dataSource(url, "", "").target("3").load();
         assertThat(current.migrate().migrationsExecuted).isEqualTo(1);
         assertThat(current.info().current().getVersion().getVersion()).isEqualTo("3");
         assertThat(Arrays.stream(current.info().applied()).limit(2).map(migration -> migration.getChecksum()).toList())

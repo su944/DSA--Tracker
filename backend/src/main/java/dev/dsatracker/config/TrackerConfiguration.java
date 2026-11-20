@@ -3,8 +3,8 @@ package dev.dsatracker.config;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import dev.dsatracker.backup.DatabaseBackups;
+import java.sql.SQLException;
 import java.time.Clock;
 import java.time.ZoneId;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,24 +21,21 @@ class TrackerConfiguration {
     }
 
     @Bean(destroyMethod = "close")
-    HikariDataSource dataSource(@Value("${tracker.database-path}") String databasePath) throws IOException {
-        if (databasePath.isBlank()) {
-            throw new IllegalArgumentException("tracker.database-path must name a database file");
-        }
+    DatabaseBackups databaseBackups(@Value("${tracker.database-path}") String databasePath,
+                                    @Value("${tracker.backup-root}") String backupRoot,
+                                    Clock clock) throws IOException, SQLException {
+        return DatabaseBackups.open(databasePath, backupRoot, clock);
+    }
 
-        Path database = Path.of(databasePath).toAbsolutePath().normalize();
-        if (database.getParent() == null || Files.isDirectory(database)) {
-            throw new IllegalArgumentException("tracker.database-path must name a database file");
-        }
-        Files.createDirectories(database.getParent());
-
+    @Bean(destroyMethod = "close")
+    HikariDataSource dataSource(DatabaseBackups backups) {
         var sqliteConfig = new SQLiteConfig();
         sqliteConfig.enforceForeignKeys(true);
         sqliteConfig.setBusyTimeout(5_000);
         // Reserve the SQLite writer before a service reads data it will change.
         sqliteConfig.setTransactionMode(SQLiteConfig.TransactionMode.IMMEDIATE);
         var sqlite = new SQLiteDataSource(sqliteConfig);
-        sqlite.setUrl("jdbc:sqlite:" + database);
+        sqlite.setUrl("jdbc:sqlite:" + backups.database());
 
         var hikari = new HikariConfig();
         hikari.setDataSource(sqlite);

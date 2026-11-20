@@ -11,30 +11,43 @@ See the [implementation plan](docs/IMPLEMENTATION_PLAN.md) and [architecture](do
 - Available local ports 8080 for Spring Boot and 5173 for Vite.
 - Internet access on the first dependency install. SQLite is bundled through its JDBC driver and requires no separate database server.
 
+## Project-local setup
+
+If Maven or a compatible Node.js version is missing from your shell, run this once from the repository root:
+
+```sh
+./scripts/setup-local.sh
+```
+
+Setup uses an existing npm command to bootstrap Node.js 24 and npm 11 and installs Maven 3.9.16. It reuses a checksum-verified Maven archive when one is cached locally. The launchers then use executable tools from `.tools/`. Maven libraries go in `.tools/maven-repository/` and frontend dependencies go in `frontend/node_modules/`. The macOS backend launcher can locate an installed JDK 21 when `JAVA_HOME` is unset.
+
+For optional settings, copy `.env.example` to `.env` and edit the values you need. The backend launcher reads the database path, time zone, and backup root from that file. Exported environment variables take precedence. Default settings work without creating the file.
+
 ## Run in development
 
-Start the backend in one terminal from the repository root.
+From the repository root, start the backend in one terminal.
 
 ```sh
-cd backend
-mvn spring-boot:run
+./scripts/dev-backend.sh
 ```
 
-Start the frontend in a second terminal from the repository root.
+Start the frontend in a second terminal.
 
 ```sh
-cd frontend
-npm ci
-npm run dev
+./scripts/dev-frontend.sh
 ```
 
-Open [http://127.0.0.1:5173](http://127.0.0.1:5173). The Dashboard checks `GET /api/health` when opened and offers **Check again** to retry. Vite proxies `/api` requests to the Spring Boot backend. Direct development requests from `http://localhost:5173` and `http://127.0.0.1:5173` are allowed by CORS.
+The frontend script installs dependencies from the lockfile when they are missing. Run `npm ci` in `frontend/` after a lockfile change. You can also run `mvn spring-boot:run` in `backend/` and `npm run dev` in `frontend/`.
 
-Check the backend directly with `curl -i http://127.0.0.1:8080/api/health`. The API returns HTTP 200 with `{"status":"UP"}` when SQLite responds, or HTTP 503 with `{"status":"DOWN"}` when the connection check fails.
+Open [http://127.0.0.1:5173](http://127.0.0.1:5173). Both development servers bind to loopback. Vite sends API requests to the local backend at port 8080. The backend accepts localhost hosts and direct cross-origin requests from the two local Vite origins on port 5173.
+
+Use `curl -i http://127.0.0.1:8080/api/health` to check the backend. The health endpoint returns HTTP 200 with `{"status":"UP"}` when SQLite responds or HTTP 503 with `{"status":"DOWN"}` when it cannot connect.
+
+Press **Ctrl+C** in each terminal to stop the servers. For a queued database restore, stop the backend, close other SQLite applications, and start the backend again with the same settings. The frontend can remain running while the backend restarts.
 
 ## Local database
 
-The commands above create `backend/data/tracker.sqlite` on first startup. The same file is reused across runs. Flyway applies ordered SQL migrations from `backend/src/main/resources/db/migration/` and records them in the database. V1 establishes the migration baseline. V2 adds the catalog, topic links, and one progress record per problem. V3 adds goals and scheduled problems. Spring Data JPA is configured with the Hibernate community SQLite dialect. Flyway owns schema changes.
+The commands above create `backend/data/tracker.sqlite` on first startup. The same file is reused across runs. Flyway applies ordered SQL migrations from `backend/src/main/resources/db/migration/` and records them in the database. V1 establishes the migration baseline. V2 adds the catalog, topic links, and one progress record per problem. V3 adds goals and scheduled problems. V4 adds revision tasks. Spring Data JPA is configured with the Hibernate community SQLite dialect. Flyway owns schema changes.
 
 - Set `TRACKER_DB_PATH` to use a different database file. Relative paths resolve from the backend process working directory.
 - Set `TRACKER_TIME_ZONE` to an IANA time zone such as `Asia/Kolkata`. The default is the host time zone.
@@ -67,6 +80,60 @@ The commands above create `backend/data/tracker.sqlite` on first startup. The sa
 - `GET /api/analytics/recent` includes separate recently solved and recently modified lists. The latest catalog or progress update determines modification time. The optional `limit` is 1 to 50 per list and defaults to 10.
 - The analytics endpoints accept `range=7|30|90|all` and default to all time. Bounded ranges include today. Undated solves count toward current status totals and all-time topic and difficulty totals. Date-based solve metrics require a saved solved date. The `/api/v1` prefix also works for reporting.
 
+## Revision queue
+
+Open **Revisions** for due today, overdue, upcoming, completed, and cancelled tasks. Only solved problems can be scheduled. The first transition to Solved schedules a review seven calendar days after the solved date. Correcting the solved date moves that initial review while it remains automatic. Completing a revision schedules another for seven days after the local completion date. Reopening a problem cancels scheduled revisions and preserves completed ones. Problems already solved when upgrading can be scheduled manually.
+
+- `GET /api/revisions?filter=DUE_TODAY|OVERDUE|UPCOMING|COMPLETED|CANCELLED` returns queue items and due counts.
+- `POST /api/revisions` schedules a solved problem with `problemId` and `date`.
+- `GET /api/revisions/{id}` reads a task, and `PUT /api/revisions/{id}` reschedules it with `date`.
+- `POST /api/revisions/{id}/complete` and `POST /api/revisions/{id}/cancel` close a scheduled task. Completion preserves the problem’s original solved date.
+
+## Catalog import and export
+
+Open **Settings** to export CSV or JSON, preview an import, and apply valid rows. Catalog files include problem metadata, topics and current progress. SQLite backups capture the entire database, including planner, goals, and revision history.
+
+- CSV requires UTF-8 and headers `leetcodeId,title,url,difficulty,topics`. Optional headers are `status,attemptedDate,solvedDate,comments`. Use semicolons between topics. Escape a literal semicolon as `\;` and a literal backslash as `\\`. Standard CSV quoting preserves commas, quotes and multiline comments.
+- JSON uses `{"version":1,"problems":[...]}` with the same fields and an array of strings for `topics`. Use the catalog difficulty and status names and ISO calendar dates.
+- Both modes match by LeetCode ID. `SKIP_EXISTING` leaves existing problems alone. `UPDATE_EXISTING` replaces their catalog fields and topics while preserving status, dates and comments. New problems can include imported progress. All rows with a repeated ID within the file are reported as invalid.
+- Preview is read-only. Apply revalidates the file and commits each valid row in its own transaction. Invalid or failed rows are reported individually. The file limit is 10 MB and 10,000 rows.
+- `POST /api/exchange/preview` and `POST /api/exchange/import` accept a multipart `file` and query parameters `format=CSV|JSON` and `mode=SKIP_EXISTING|UPDATE_EXISTING`. `GET /api/exchange/export?format=CSV|JSON` downloads the catalog.
+
+## SQLite backup and restore
+
+**Settings → SQLite backups** creates an online snapshot of committed data. The default root is `~/.dsa-tracker/backups`. Set `TRACKER_BACKUP_ROOT` to another location outside any Git checkout. Backups for each configured database live in a separate subdirectory named by a hash of its canonical path. Filenames contain a UTC timestamp and a generated UUID. Protect this directory as you would the live database.
+
+1. Select a backup, type `RESTORE`, and queue the restore. The app validates SQLite integrity, foreign keys, and Flyway history, then records a checksum of the confirmed file.
+2. Stop the backend and close other SQLite clients. Restart the backend with the same database and backup settings. Startup saves a recovery backup of the latest live data, verifies the confirmed checksum and revalidates the replacement, then swaps it in atomically before opening the connection pool.
+3. Reopen Settings. The pending marker clears after the swap. The recovery backup appears in the same list and can be queued if you need to return to the pre-restore state.
+
+`GET /api/backups` lists backups and pending state. `POST /api/backups` creates a backup. `POST /api/backups/{id}/restore` accepts `{"confirmation":"RESTORE"}`. `DELETE /api/backups/restore` clears a pending restore. All milestone endpoints also support the `/api/v1` prefix.
+
+### Manual backup and recovery
+
+If using the SQLite CLI, run these commands from the backend directory and use the same `TRACKER_DB_PATH` as the app.
+
+```sh
+db_path="${TRACKER_DB_PATH:-data/tracker.sqlite}"
+manual_root="$HOME/.dsa-tracker/manual-backups"
+mkdir -p "$manual_root"
+backup_path="$manual_root/tracker-$(date -u +%Y%m%dT%H%M%SZ).sqlite"
+sqlite3 "$db_path" '.timeout 5000' ".backup \"$backup_path\""
+sqlite3 -readonly "$backup_path" 'PRAGMA integrity_check; PRAGMA foreign_key_check;'
+```
+
+An intact backup prints `ok` and no foreign-key violations. For manual restoration, first stop the backend and every SQLite client. Use a verified backup and preserve the live database separately. If the live database opens, take another backup as shown above and checkpoint its WAL.
+
+```sh
+# backup_path must point to the verified snapshot you want to restore.
+sqlite3 "$db_path" 'PRAGMA wal_checkpoint(TRUNCATE);'
+staged_db=$(mktemp "$(dirname "$db_path")/.tracker-restore.XXXXXX")
+cp "$backup_path" "$staged_db"
+sqlite3 -readonly "$staged_db" 'PRAGMA integrity_check; PRAGMA foreign_key_check;'
+```
+
+Continue only after the checkpoint reports an unblocked result, the candidate passes integrity checks, and no `-wal`, `-shm`, or `-journal` sidecars remain. With the backend still stopped, run `mv -i "$staged_db" "$db_path"` and restart. If startup repeatedly fails while applying a queued restore, move the affected database’s `pending-restore` marker to a safe location before attempting manual recovery. A marker from a version that did not record a checksum also requires this step. Once the app starts with the existing database, select and confirm the intended backup again. If the live database cannot open, preserve it and its sidecars together in a separate recovery directory before installing any replacement. Keep the prior recovery copy until the restored tracker opens and you have checked your data.
+
 ## Verify and package
 
 From the repository root, run the frontend checks and build before packaging the backend so Maven can include the built frontend in the JAR.
@@ -79,7 +146,17 @@ npm run build
 
 cd ../backend
 mvn clean verify
+cd ..
+python3 scripts/smoke-test.py
+```
+
+The optional packaged smoke test needs Python 3.9 or later and Java on `PATH`. It runs the actual HTTP service on loopback with an ephemeral port and a temporary database. It checks catalog CRUD, goals, planner, analytics, revisions, file exchange, and a full restore across process restarts.
+
+To run the packaged app from the repository root:
+
+```sh
+cd backend
 java -jar target/dsa-tracker-0.1.0-SNAPSHOT.jar
 ```
 
-Open [http://127.0.0.1:8080](http://127.0.0.1:8080) to use the packaged app. Navigation and health checks use local assets and same-origin requests.
+Open [http://127.0.0.1:8080](http://127.0.0.1:8080). Press **Ctrl+C** in the terminal to stop it. Navigation and health checks use local assets and same-origin requests.

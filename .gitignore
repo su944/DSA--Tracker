@@ -1,8 +1,10 @@
 # Build outputs and dependencies
+/.tools/
 target/
 dist/
 node_modules/
 coverage/
+__pycache__/
 *.tsbuildinfo
 
 # Local configuration
@@ -18,5 +20,6 @@ data/
 *.sqlite-*
 *.sqlite3
 *.sqlite3-*
+*-tracker-lock
 
 .DS_Store

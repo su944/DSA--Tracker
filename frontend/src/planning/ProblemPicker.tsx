@@ -1,17 +1,18 @@
 import { useCallback, useState } from 'react'
-import { listProblems } from '../catalog/api'
+import { listProblems, type ProgressStatus } from '../catalog/api'
 import { asError, FormError, LoadMessage } from '../catalog/components'
 import { useResource } from '../catalog/useResource'
 import { scheduleProblem } from './api'
 import { displayDate } from './dates'
 
-export function ProblemPicker({ date, scheduledIds, onClose, onSaved }: {
+export function ProblemPicker({ date, scheduledIds, onClose, onSaved, status, onSchedule = scheduleProblem }: {
   date: string; scheduledIds: number[]; onClose: () => void; onSaved: () => void
+  status?: ProgressStatus; onSchedule?: (problemId: number, date: string) => Promise<unknown>
 }) {
   const [query, setQuery] = useState({ text: '', page: 0 })
   const load = useCallback((signal: AbortSignal) => listProblems(new URLSearchParams({
-    q: query.text, page: String(query.page), size: '10',
-  }).toString(), signal), [query])
+    q: query.text, page: String(query.page), size: '10', ...(status ? { status } : {}),
+  }).toString(), signal), [query, status])
   const problems = useResource(load)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<Error | null>(null)
@@ -21,7 +22,7 @@ export function ProblemPicker({ date, scheduledIds, onClose, onSaved }: {
     setBusy(true)
     setError(null)
     try {
-      await scheduleProblem(problemId, date)
+      await onSchedule(problemId, date)
       onSaved()
     } catch (failure) {
       setError(asError(failure))

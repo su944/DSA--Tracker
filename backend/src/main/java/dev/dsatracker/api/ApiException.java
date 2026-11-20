@@ -13,6 +13,10 @@ public final class ApiException extends RuntimeException {
         this.fields = fields;
     }
 
+    public Map<String, String> fieldErrors() {
+        return fields;
+    }
+
     public static ApiException invalid(String field, String message) {
         return new ApiException(HttpStatus.BAD_REQUEST, message, Map.of(field, message));
     }

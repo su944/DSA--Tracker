@@ -4,10 +4,10 @@ import dev.dsatracker.api.ApiException;
 import java.net.URI;
 import java.util.regex.Pattern;
 
-record LeetCodeLink(String slug, String url) {
+public record LeetCodeLink(String slug, String url) {
     private static final Pattern PROBLEM_PATH = Pattern.compile("/problems/([a-z0-9]+(?:-[a-z0-9]+)*)/?");
 
-    static LeetCodeLink parse(String input) {
+    public static LeetCodeLink parse(String input) {
         URI uri;
         try {
             uri = URI.create(input.strip());

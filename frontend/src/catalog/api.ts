@@ -33,11 +33,12 @@ export class CatalogError extends Error {
   }
 }
 
-export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+export async function request<T>(path: string, { timeoutMs = 10_000, ...options }:
+  RequestInit & { timeoutMs?: number } = {}): Promise<T> {
   const headers = new Headers(options.headers)
   headers.set('Accept', 'application/json')
-  if (options.body !== undefined) headers.set('Content-Type', 'application/json')
-  const timeout = AbortSignal.timeout(10_000)
+  if (typeof options.body === 'string') headers.set('Content-Type', 'application/json')
+  const timeout = AbortSignal.timeout(timeoutMs)
   const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout
 
   let response: Response
@@ -45,6 +46,12 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
     response = await fetch(`/api/${path}`, { ...options, headers, signal })
   } catch (error) {
     if (options.signal?.aborted) throw error
+    if (timeout.aborted) {
+      const message = options.method && options.method !== 'GET'
+        ? 'The backend took too long to respond. This operation may still be running. Check the result before retrying.'
+        : 'The local backend took too long to respond. Try again.'
+      throw new CatalogError(message, {})
+    }
     throw new CatalogError('Could not connect to the local backend. Check that it is running and try again.', {})
   }
   if (!response.ok) {

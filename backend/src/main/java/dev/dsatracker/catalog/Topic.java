@@ -40,7 +40,7 @@ public class Topic {
         this.nameKey = comparisonKey(this.name);
     }
 
-    static String comparisonKey(String name) {
+    public static String comparisonKey(String name) {
         return Normalizer.normalize(name.strip(), Normalizer.Form.NFC).toLowerCase(Locale.ROOT);
     }
 }
