@@ -25,10 +25,12 @@ public final class CatalogDtos {
     public record TopicInput(@NotBlank @Size(max = 80) String name) {}
 
     public record TopicView(long id, String name, Instant createdAt) {
-        static TopicView from(Topic topic) {
+        public static TopicView from(Topic topic) {
             return new TopicView(topic.id, topic.name, topic.createdAt);
         }
     }
+
+    public record ProblemReference(long id, long leetcodeId, String title, ProgressStatus status, LocalDate solvedDate) {}
 
     public record ProgressView(ProgressStatus status, LocalDate attemptedDate, LocalDate solvedDate,
                                String comments, Instant updatedAt) {

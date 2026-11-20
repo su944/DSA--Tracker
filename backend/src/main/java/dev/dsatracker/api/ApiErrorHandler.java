@@ -13,8 +13,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import tools.jackson.databind.DatabindException;
 
-@RestControllerAdvice(basePackages = "dev.dsatracker.catalog")
-class CatalogErrorHandler {
+@RestControllerAdvice(basePackages = {"dev.dsatracker.catalog", "dev.dsatracker.planning"})
+class ApiErrorHandler {
     record ErrorResponse(String code, String message, Map<String, String> fields) {}
 
     @ExceptionHandler(ApiException.class)
@@ -49,7 +49,7 @@ class CatalogErrorHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     ResponseEntity<ErrorResponse> handleConstraint() {
-        return response(HttpStatus.CONFLICT, "The change conflicts with existing catalog data.", Map.of());
+        return response(HttpStatus.CONFLICT, "The change conflicts with existing tracker data.", Map.of());
     }
 
     private ResponseEntity<ErrorResponse> response(HttpStatus status, String message, Map<String, String> fields) {

@@ -1,6 +1,6 @@
 # DSA Tracker
 
-A local-first workspace for data structures and algorithms practice. Use Topics to organize your catalog, then use Problems to add, filter, and update your practice records. The Dashboard displays the local connection status.
+A local-first workspace for data structures and algorithms practice. Use Topics to organize your catalog, then use Problems to add, filter, and update your practice records. Use Goals to track solve targets and Daily Planner to organize practice by day or week. The Dashboard displays the local connection status.
 
 See the [implementation plan](docs/IMPLEMENTATION_PLAN.md) and [architecture](docs/ARCHITECTURE.md) for the build sequence and system boundaries.
 
@@ -34,7 +34,7 @@ Check the backend directly with `curl -i http://127.0.0.1:8080/api/health`. The 
 
 ## Local database
 
-The commands above create `backend/data/tracker.sqlite` on first startup. The same file is reused across runs. Flyway applies ordered SQL migrations from `backend/src/main/resources/db/migration/` and records them in the database. V1 establishes the migration baseline. V2 adds the catalog, topic links, and one progress record per problem. Spring Data JPA is configured with the Hibernate community SQLite dialect. Flyway owns schema changes.
+The commands above create `backend/data/tracker.sqlite` on first startup. The same file is reused across runs. Flyway applies ordered SQL migrations from `backend/src/main/resources/db/migration/` and records them in the database. V1 establishes the migration baseline. V2 adds the catalog, topic links, and one progress record per problem. V3 adds goals and scheduled problems. Spring Data JPA is configured with the Hibernate community SQLite dialect. Flyway owns schema changes.
 
 - Set `TRACKER_DB_PATH` to use a different database file. Relative paths resolve from the backend process working directory.
 - Set `TRACKER_TIME_ZONE` to an IANA time zone such as `Asia/Kolkata`. The default is the host time zone.
@@ -47,6 +47,16 @@ The commands above create `backend/data/tracker.sqlite` on first startup. The sa
 - `PATCH /api/problems/{id}/progress` accepts `status`, `attemptedDate`, `solvedDate`, and `comments`. Dates use `YYYY-MM-DD`. Omitted fields keep applicable values, and newly required dates default to today in the tracker time zone. Solved can have an empty attempted date. Attempted clears the solved date, and Not Started clears both dates. Send an empty string to clear comments.
 - `GET` and `POST /api/topics` list and create topics. `GET`, `PUT`, and `DELETE /api/topics/{id}` read, rename, and delete a topic. Names are trimmed and compared case-insensitively. Remove a topic from all linked problems before deleting it. Deleting a problem removes its progress and topic links, and keeps the topics.
 - Both resources also support the `/api/v1` prefix. The API returns `{ "code": "...", "message": "...", "fields": {} }` for invalid input, missing records, and catalog conflicts.
+
+## Goals and planner API
+
+- `GET` and `POST /api/goals` list and create goals. `GET`, `PUT`, and `DELETE /api/goals/{id}` read, replace, and delete a goal. Send `name`, `type`, `startDate`, a positive `targetCount`, and an optional `topicId`. Supply `endDate` for `CUSTOM`. `DAILY` ends on its start date, and `WEEKLY` runs Monday through Sunday.
+- `GET /api/goals/{id}/progress` counts distinct problems with current status Solved and a solved date within the inclusive period. A topic restriction uses each problem's current topic membership. Goal list and detail responses include the same progress.
+- `GET /api/planner?view=DAY|WEEK&date=YYYY-MM-DD` returns the selected day or Monday–Sunday week, with scheduled, completed, and skipped counts. The default date is today in the tracker time zone. Scheduled totals include skipped tasks, which are also reported separately.
+- `POST /api/planner` schedules an existing problem with `problemId` and `date`. `GET /api/planner/{id}` reads an item, `PUT /api/planner/{id}` reschedules it with `date`, and `DELETE /api/planner/{id}` removes it. Scheduling the same problem twice on one date returns `409`.
+- `PATCH /api/planner/{id}/skip` accepts `skipped` to skip or restore an item. `POST /api/planner/{id}/carry-forward` moves an incomplete item to a later `date` and clears its skipped state. Completed items can be removed. Moving and skipping apply to incomplete items.
+- An active item is completed when the problem is currently Solved and its solved date matches the scheduled date. Correcting the solved date or reopening the problem updates the planner on its next read. Scheduling changes preserve problem progress.
+- The `/api/v1` prefix also works for goals and planner. Deleting a problem removes its planner items. Deleting a topic used by a goal requires removing that restriction first.
 
 ## Verify and package
 

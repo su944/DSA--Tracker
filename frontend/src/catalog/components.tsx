@@ -27,7 +27,8 @@ function fieldLabel(field: string) {
   return ({
     leetcodeId: 'LeetCode ID', title: 'Title', url: 'LeetCode URL', difficulty: 'Difficulty',
     topicIds: 'Topics', name: 'Topic name', attemptedDate: 'Attempted date', solvedDate: 'Solved date',
-    comments: 'Comments', status: 'Status',
+    comments: 'Comments', status: 'Status', startDate: 'Start date', endDate: 'End date',
+    type: 'Goal period', targetCount: 'Target count', topicId: 'Topic', problemId: 'Problem', date: 'Date',
   } as Record<string, string>)[field] ?? field
 }
 

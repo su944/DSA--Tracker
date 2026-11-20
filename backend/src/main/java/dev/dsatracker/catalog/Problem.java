@@ -22,7 +22,7 @@ import org.hibernate.annotations.BatchSize;
 
 @Entity
 @Table(name = "problems")
-class Problem {
+public class Problem {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     Long id;
@@ -66,6 +66,10 @@ class Problem {
     Problem(Instant now) {
         createdAt = now;
         progress = new ProblemProgress(this, now);
+    }
+
+    public CatalogDtos.ProblemReference reference() {
+        return new CatalogDtos.ProblemReference(id, leetcodeId, title, progress.status, progress.solvedDate);
     }
 
     void edit(CatalogDtos.ProblemInput input, LeetCodeLink link, Collection<Topic> newTopics, Instant now) {

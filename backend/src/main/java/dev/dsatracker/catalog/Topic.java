@@ -13,7 +13,7 @@ import java.util.Locale;
 
 @Entity
 @Table(name = "topics")
-class Topic {
+public class Topic {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     Long id;

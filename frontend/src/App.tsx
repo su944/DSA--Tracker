@@ -8,10 +8,10 @@ import { ProblemLibrary } from './catalog/ProblemLibrary'
 import { ProblemForm } from './catalog/ProblemForm'
 import { ProblemDetails } from './catalog/ProblemDetails'
 import { TopicManagement } from './catalog/TopicManagement'
+import { GoalsPage } from './planning/GoalsPage'
+import { PlannerPage } from './planning/PlannerPage'
 
 const featurePages = [
-  { name: 'Goals', path: '/goals', icon: Target, description: 'Set daily, weekly, and topic-based practice targets.' },
-  { name: 'Daily Planner', path: '/planner', icon: CalendarDays, description: 'Schedule problems for a practice date.' },
   { name: 'Revisions', path: '/revisions', icon: BookOpen, description: 'See upcoming reviews and revisit solved problems.' },
   { name: 'Analytics', path: '/analytics', icon: ChartNoAxesColumn, description: 'Review solve trends and breakdowns by difficulty and topic.' },
 ] as const
@@ -20,6 +20,8 @@ const destinations = [
   { name: 'Dashboard', path: '/', icon: LayoutDashboard },
   { name: 'Problems', path: '/problems', icon: ListChecks },
   { name: 'Topics', path: '/topics', icon: Tags },
+  { name: 'Goals', path: '/goals', icon: Target },
+  { name: 'Daily Planner', path: '/planner', icon: CalendarDays },
   ...featurePages,
 ]
 
@@ -105,6 +107,8 @@ export function App() {
         <Route path="/problems/:id" element={<ProblemDetails />} />
         <Route path="/problems/:id/edit" element={<ProblemForm />} />
         <Route path="/topics" element={<TopicManagement />} />
+        <Route path="/goals" element={<GoalsPage />} />
+        <Route path="/planner" element={<PlannerPage />} />
         {featurePages.map((destination) => (
           <Route key={destination.path} path={destination.path} element={<Placeholder {...destination} />} />
         ))}

@@ -55,6 +55,9 @@ class TopicService {
         if (problems.countByTopic(id) > 0) {
             throw ApiException.conflict("id", "Remove this topic from its problems before deleting it.");
         }
+        if (topics.countGoalsByTopic(id) > 0) {
+            throw ApiException.conflict("id", "Remove this topic from its goals before deleting it.");
+        }
         topics.delete(topic);
     }
 

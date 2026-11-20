@@ -2,9 +2,13 @@ package dev.dsatracker.catalog;
 
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 
-interface TopicRepository extends JpaRepository<Topic, Long> {
+public interface TopicRepository extends JpaRepository<Topic, Long> {
     List<Topic> findAllByOrderByNameKeyAsc();
     boolean existsByNameKey(String nameKey);
     boolean existsByNameKeyAndIdNot(String nameKey, long id);
+
+    @Query("select count(g) from Goal g where g.topic.id = :topicId")
+    long countGoalsByTopic(long topicId);
 }

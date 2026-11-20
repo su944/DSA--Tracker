@@ -273,7 +273,7 @@ class CatalogIntegrationTest {
         assertThat(baseline.migrate().migrationsExecuted).isEqualTo(1);
         Integer checksum = baseline.info().current().getChecksum();
 
-        Flyway upgraded = Flyway.configure().dataSource(url, "", "").load();
+        Flyway upgraded = Flyway.configure().dataSource(url, "", "").target("2").load();
         assertThat(upgraded.migrate().migrationsExecuted).isEqualTo(1);
         assertThat(upgraded.info().current().getVersion().getVersion()).isEqualTo("2");
         assertThat(upgraded.info().applied()[0].getChecksum()).isEqualTo(checksum);
