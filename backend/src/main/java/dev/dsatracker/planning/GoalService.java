@@ -10,7 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-class GoalService {
+public class GoalService {
     private final GoalRepository goals;
     private final TopicRepository topics;
 
@@ -22,6 +22,11 @@ class GoalService {
     @Transactional(readOnly = true)
     List<GoalView> list() {
         return goals.listWithProgress().stream().map(GoalView::from).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<GoalView> activeOn(LocalDate date) {
+        return goals.activeWithProgress(date).stream().map(GoalView::from).toList();
     }
 
     @Transactional(readOnly = true)

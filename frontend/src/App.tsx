@@ -1,19 +1,19 @@
 import {
-  Activity, BookOpen, CalendarDays, ChartNoAxesColumn, CodeXml, LayoutDashboard,
-  ListChecks, RefreshCw, Tags, Target,
+  BookOpen, CalendarDays, ChartNoAxesColumn, CodeXml, LayoutDashboard,
+  ListChecks, Tags, Target,
 } from 'lucide-react'
 import { Link, NavLink, Outlet, Route, Routes } from 'react-router-dom'
-import { useBackendHealth, type BackendHealth } from './useBackendHealth'
 import { ProblemLibrary } from './catalog/ProblemLibrary'
 import { ProblemForm } from './catalog/ProblemForm'
 import { ProblemDetails } from './catalog/ProblemDetails'
 import { TopicManagement } from './catalog/TopicManagement'
 import { GoalsPage } from './planning/GoalsPage'
 import { PlannerPage } from './planning/PlannerPage'
+import { DashboardPage } from './reporting/DashboardPage'
+import { AnalyticsPage } from './reporting/AnalyticsPanels'
 
 const featurePages = [
   { name: 'Revisions', path: '/revisions', icon: BookOpen, description: 'See upcoming reviews and revisit solved problems.' },
-  { name: 'Analytics', path: '/analytics', icon: ChartNoAxesColumn, description: 'Review solve trends and breakdowns by difficulty and topic.' },
 ] as const
 
 const destinations = [
@@ -23,14 +23,8 @@ const destinations = [
   { name: 'Goals', path: '/goals', icon: Target },
   { name: 'Daily Planner', path: '/planner', icon: CalendarDays },
   ...featurePages,
+  { name: 'Analytics', path: '/analytics', icon: ChartNoAxesColumn },
 ]
-
-const connection = {
-  checking: { label: 'Checking backend', detail: 'Checking the local API and database.' },
-  online: { label: 'Backend connected', detail: 'The local API and SQLite are responding.' },
-  unavailable: { label: 'Database unavailable', detail: 'The local API responded, but its SQLite check failed.' },
-  offline: { label: 'Backend unreachable', detail: 'Start the Spring Boot backend, then check the connection again.' },
-} satisfies Record<BackendHealth, { label: string; detail: string }>
 
 function Shell() {
   return (
@@ -60,31 +54,6 @@ function Shell() {
   )
 }
 
-function Dashboard() {
-  const { health, refresh } = useBackendHealth()
-  const { label, detail } = connection[health]
-
-  return (
-    <>
-      <h1>Dashboard</h1>
-      <section className="connection-card" aria-labelledby="connection-heading">
-        <div className="connection-icon"><Activity size={23} aria-hidden="true" /></div>
-        <div className="connection-copy">
-          <h2 id="connection-heading">Local connection</h2>
-          <div role="status" className="connection-status">
-            <p className="status-label"><span className={`status-dot ${health}`} aria-hidden="true" />{label}</p>
-            <p className="body-text">{detail}</p>
-          </div>
-        </div>
-        <button type="button" className="check-button" onClick={refresh} disabled={health === 'checking'}>
-          <RefreshCw size={16} aria-hidden="true" />
-          Check again
-        </button>
-      </section>
-    </>
-  )
-}
-
 function Placeholder({ name, description }: { name: string; description: string }) {
   return (
     <>
@@ -101,7 +70,7 @@ export function App() {
   return (
     <Routes>
       <Route element={<Shell />}>
-        <Route index element={<Dashboard />} />
+        <Route index element={<DashboardPage />} />
         <Route path="/problems" element={<ProblemLibrary />} />
         <Route path="/problems/new" element={<ProblemForm />} />
         <Route path="/problems/:id" element={<ProblemDetails />} />
@@ -109,6 +78,7 @@ export function App() {
         <Route path="/topics" element={<TopicManagement />} />
         <Route path="/goals" element={<GoalsPage />} />
         <Route path="/planner" element={<PlannerPage />} />
+        <Route path="/analytics" element={<AnalyticsPage />} />
         {featurePages.map((destination) => (
           <Route key={destination.path} path={destination.path} element={<Placeholder {...destination} />} />
         ))}

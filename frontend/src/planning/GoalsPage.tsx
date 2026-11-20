@@ -4,6 +4,7 @@ import { asError, FormError, LoadMessage } from '../catalog/components'
 import { useResource } from '../catalog/useResource'
 import { deleteGoal, goalTypes, listGoals, saveGoal, type Goal, type GoalInput, type GoalType } from './api'
 import { dateRange } from './dates'
+import { GoalProgressMeter } from './GoalProgressMeter'
 
 export function GoalsPage() {
   const goals = useResource(listGoals)
@@ -62,10 +63,7 @@ export function GoalsPage() {
                 <p className="planning-meta">{goalTypes[goal.type]} · {goal.topic?.name ?? 'All topics'}</p>
                 <h2>{goal.name}</h2>
                 <p className="body-text">{dateRange(goal.startDate, goal.endDate)}</p>
-                <p className="planning-progress-label">{goal.progress.solvedCount} / {goal.progress.targetCount} solved</p>
-                <progress aria-label={`${goal.name} progress`} value={Math.min(goal.progress.solvedCount, goal.progress.targetCount)}
-                  max={goal.progress.targetCount} />
-                {goal.progress.complete && <p className="planning-complete">Target reached</p>}
+                <GoalProgressMeter goal={goal} />
               </div>
               {confirmation === goal.id ? (
                 <div>

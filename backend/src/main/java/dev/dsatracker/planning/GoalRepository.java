@@ -1,5 +1,6 @@
 package dev.dsatracker.planning;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -22,6 +23,9 @@ interface GoalRepository extends JpaRepository<Goal, Long> {
 
     @Query(WITH_PROGRESS + " order by g.startDate desc, g.id desc")
     List<Tally> listWithProgress();
+
+    @Query(WITH_PROGRESS + " where :date between g.startDate and g.endDate order by g.endDate, g.id")
+    List<Tally> activeWithProgress(LocalDate date);
 
     @Query(WITH_PROGRESS + " where g.id = :id")
     Optional<Tally> findWithProgress(long id);

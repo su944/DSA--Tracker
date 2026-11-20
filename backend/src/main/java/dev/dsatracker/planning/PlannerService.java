@@ -18,7 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-class PlannerService {
+public class PlannerService {
     private final PlanItemRepository items;
     private final ProblemRepository problems;
     private final Clock clock;
@@ -30,7 +30,7 @@ class PlannerService {
     }
 
     @Transactional(readOnly = true)
-    Calendar calendar(LocalDate requestedDate, View view) {
+    public Calendar calendar(LocalDate requestedDate, View view) {
         LocalDate today = LocalDate.now(clock);
         LocalDate date = PlanningDates.checked("date", requestedDate == null ? today : requestedDate);
         LocalDate start = view == View.WEEK ? PlanningDates.monday(date) : date;

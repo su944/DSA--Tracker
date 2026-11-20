@@ -1,6 +1,6 @@
 # DSA Tracker
 
-A local-first workspace for data structures and algorithms practice. Use Topics to organize your catalog, then use Problems to add, filter, and update your practice records. Use Goals to track solve targets and Daily Planner to organize practice by day or week. The Dashboard displays the local connection status.
+A local-first workspace for data structures and algorithms practice. Use Topics to organize your catalog, then use Problems to add, filter, and update your practice records. Use Goals to track solve targets and Daily Planner to organize practice by day or week. The Dashboard shows catalog totals, today’s plan and goals, and practice analytics alongside the local connection status.
 
 See the [implementation plan](docs/IMPLEMENTATION_PLAN.md) and [architecture](docs/ARCHITECTURE.md) for the build sequence and system boundaries.
 
@@ -57,6 +57,15 @@ The commands above create `backend/data/tracker.sqlite` on first startup. The sa
 - `PATCH /api/planner/{id}/skip` accepts `skipped` to skip or restore an item. `POST /api/planner/{id}/carry-forward` moves an incomplete item to a later `date` and clears its skipped state. Completed items can be removed. Moving and skipping apply to incomplete items.
 - An active item is completed when the problem is currently Solved and its solved date matches the scheduled date. Correcting the solved date or reopening the problem updates the planner on its next read. Scheduling changes preserve problem progress.
 - The `/api/v1` prefix also works for goals and planner. Deleting a problem removes its planner items. Deleting a topic used by a goal requires removing that restriction first.
+
+## Dashboard and analytics API
+
+- `GET /api/dashboard/summary` reports current problem totals by status. Each problem contributes once, regardless of its topics.
+- `GET /api/dashboard/today` returns today’s planner items and active goal progress in the tracker time zone.
+- `GET /api/analytics/topics` reports the total problems, solves in the selected range, and currently unsolved problems per topic. A problem can count once for each of its topics.
+- `GET /api/analytics/difficulty` reports solved counts by difficulty, and `GET /api/analytics/activity` groups current solves by their saved solved date. Bounded activity periods include days with zero solves when the window has any solves. All time lists dates with solves.
+- `GET /api/analytics/recent` includes separate recently solved and recently modified lists. The latest catalog or progress update determines modification time. The optional `limit` is 1 to 50 per list and defaults to 10.
+- The analytics endpoints accept `range=7|30|90|all` and default to all time. Bounded ranges include today. Undated solves count toward current status totals and all-time topic and difficulty totals. Date-based solve metrics require a saved solved date. The `/api/v1` prefix also works for reporting.
 
 ## Verify and package
 
