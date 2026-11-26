@@ -2,13 +2,16 @@ services:
   backend:
     build: ./backend
     environment:
-      SERVER_ADDRESS: 0.0.0.0
+      SERVER_ADDRESS: 127.0.0.1
       SERVER_PORT: "8080"
       SERVER_SHUTDOWN: graceful
       SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE: 25s
       TRACKER_DB_PATH: /data/tracker.sqlite
       TRACKER_BACKUP_ROOT: /backups
       TRACKER_TIME_ZONE: ${TRACKER_TIME_ZONE:-}
+      TRACKER_MCP_ENABLED: ${TRACKER_MCP_ENABLED:-false}
+    ports:
+      - "127.0.0.1:8080:8081"
     volumes:
       - tracker-data:/data
       - tracker-backups:/backups
@@ -24,11 +27,11 @@ services:
 
   frontend:
     build: ./frontend
+    network_mode: service:backend
     depends_on:
       backend:
         condition: service_healthy
-    ports:
-      - "127.0.0.1:8080:8080"
+        restart: true
     restart: unless-stopped
 
 volumes:

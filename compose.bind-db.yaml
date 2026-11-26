@@ -1,0 +1,12 @@
+services:
+  backend:
+    volumes:
+      - type: bind
+        source: ./backend/data
+        target: /data
+        bind:
+          create_host_path: false
+      - tracker-native-backups:/backups
+
+volumes:
+  tracker-native-backups:

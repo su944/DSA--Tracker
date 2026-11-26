@@ -30,6 +30,16 @@ For backups, use **Settings → SQLite backups**. To restore one, enter `RESTORE
 
 If startup fails, check `docker compose ps` and backend logs first. For a port conflict, stop the native backend or other service using port 8080. If the browser shows a gateway error immediately after backend recreation, wait for the backend health check to pass and reload.
 
+### Use the original database directly
+
+To use the same SQLite file as the native app, check that `backend/data/tracker.sqlite` exists, stop the native backend and close other SQLite clients, and make a backup. Run this from the repository root:
+
+```sh
+docker compose -f compose.yaml -f compose.bind-db.yaml up -d
+```
+
+The override mounts `backend/data` at `/data`. The backend container user (UID and GID 10001) needs write access to that directory and database. Changes, including restores, affect the original file. Use the same two `-f` flags for later Compose commands, including `stop` before running the native backend again. Backups for this mode use the separate `tracker-native-backups` volume. Running `docker compose up -d` with just the base configuration switches back to the Docker-managed database.
+
 ### Move an existing database into Docker
 
 1. Stop the native backend and close other applications using its SQLite file. Keep the original file and its sidecars together. The native launcher defaults to `backend/data/tracker.sqlite`. If you set `TRACKER_DB_PATH`, use that file instead. Relative values resolve from the native backend directory.
