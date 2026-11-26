@@ -1,6 +1,6 @@
 # MCP integration
 
-The existing Java 21 Spring Boot application serves REST and can opt in to a local MCP endpoint. The server exposes `ping_tracker` and three read-only catalog tools. Tool results include structured JSON. Catalog tools read the local SQLite catalog through the same application services used by REST.
+The existing Java 21 Spring Boot application serves REST and can opt in to a local MCP endpoint. The server exposes `ping_tracker`, three read-only catalog tools, and five read-only reporting tools. Tool results include structured JSON. Catalog tools read the local SQLite catalog through the same application services used by REST.
 
 ## Dependencies and transport
 
@@ -28,6 +28,24 @@ curl -fsS http://127.0.0.1:8080/api/health
 ```
 
 Connect to `http://127.0.0.1:8080/mcp`. If Docker or another service already uses port 8080, add `SERVER_PORT=18081` to the startup command and use that port for both URLs. If another tracker backend already has your SQLite database open, stop it or set `TRACKER_DB_PATH` to a separate absolute path before starting. To disable MCP, restart with `TRACKER_MCP_ENABLED=false` or omit the variable.
+
+## Start with Docker Compose
+
+From the repository root, enable MCP and rebuild the application images:
+
+```sh
+TRACKER_MCP_ENABLED=true docker compose up -d --build
+```
+
+If you use the original SQLite file through the database bind-mount override, keep the override in the command:
+
+```sh
+TRACKER_MCP_ENABLED=true docker compose -f compose.yaml -f compose.bind-db.yaml up -d --build
+```
+
+The browser and Inspector share host port 8080. Connect Inspector using Streamable HTTP at `http://127.0.0.1:8080/mcp`. Nginx shares the backend network namespace, reaches Spring Boot over loopback, and forwards MCP sessions without buffering. Docker publishes only the Nginx port on host loopback.
+
+Set `TRACKER_MCP_ENABLED=true` in the root `.env` to keep MCP enabled between launches. Set it to `false` and run the same Compose command with that value to disable it. Use `up` to apply the changed environment.
 
 ## Test with MCP Inspector
 
@@ -122,7 +140,50 @@ Example result: `{"topics":[{"id":1,"name":"Array"}]}`.
 
 Catalog tools only see records already in the local database. Search results are paginated, while the topic list is unpaginated. Search matches title substrings as supported by SQLite. Topic names use the catalog's Unicode normalization and case-insensitive comparison key.
 
+## Milestone 3 · Analytics and progress tools
+
+In Inspector, connect to the configured local `/mcp` endpoint with **Streamable HTTP** and select **Tools → List Tools**. Select a reporting tool, enter example arguments, and read the result in **structuredContent**. The same calls are available in Inspector CLI:
+
+```sh
+endpoint=http://127.0.0.1:8080/mcp
+inspector() { npx -y @modelcontextprotocol/inspector@2.16.0 --cli "$endpoint" --transport http "$@"; }
+inspector --method tools/call --tool-name get_dashboard_summary
+inspector --method tools/call --tool-name get_topic_progress --tool-args-json '{"range":"7"}'
+inspector --method tools/call --tool-name get_difficulty_progress --tool-args-json '{"range":"all"}'
+inspector --method tools/call --tool-name get_solving_activity --tool-args-json '{"range":"30"}'
+inspector --method tools/call --tool-name get_recent_problems --tool-args-json '{"limit":5}'
+```
+
+Pass ranges as strings. The accepted values are `"7"`, `"30"`, `"90"`, and `"all"`. A bounded range includes today and the preceding calendar days in the tracker timezone configured by `TRACKER_TIME_ZONE`. The existing reporting service determines date boundaries and counts from saved progress. Invalid ranges and limits return tool errors.
+
+### get_dashboard_summary
+
+Takes no arguments. The integer counts `totalProblems`, `solved`, `attempted`, and `notStarted` reflect current status. Every problem counts once. `solvedPercentage` is a number from 0 to 100 and is zero for an empty catalog.
+
+### get_topic_progress
+
+Optional `range` defaults to `"all"`. Returns `{range, topics}`, with one entry per topic. Each entry includes numeric `topicId`, `topicName`, and integer counts `totalProblems`, `solvedProblems`, `unsolvedProblems`, and `solvedProblemsAllTime`. `solvedProblems` uses the selected range. `solvedPercentage` divides that range count by the full topic size and is zero for an empty topic. `unsolvedProblems` and `solvedProblemsAllTime` reflect current status across all time. A problem tagged with multiple topics can appear in each topic's counts. Use the dashboard summary for global totals.
+
+### get_difficulty_progress
+
+Optional `range` defaults to `"all"`. Returns `{range, difficulties}`, with `{difficulty, solvedCount}` for each of `EASY`, `MEDIUM`, and `HARD` in that order. A missing category has a zero solved count. The underlying difficulty report supplies solved counts only.
+
+### get_solving_activity
+
+Optional `range` defaults to `"30"`. Returns `{range, startDate, endDate, days, totalSolvesInRange}`. Each day has an ISO calendar `date` and integer `solvedCount`. The total sums the returned day counts. Bounded ranges with activity include zero-count days. Bounded ranges without activity return an empty day list. For `"all"`, `startDate` is null and only dates with solves appear.
+
+### get_recent_problems
+
+Optional integer `limit` defaults to 10 and accepts 1 through 50 per list. Returns `{recentlySolved, recentlyModified}` in the order supplied by the existing recent report. Each entry includes numeric `id` and `leetcodeId`, `title`, current `status`, and `solvedDate` as an ISO date or null.
+
+### Counting limits
+
+An undated problem with saved status `SOLVED` counts in the dashboard and all-time topic and difficulty totals. Bounded solve counts, solving activity, and recently solved entries require a saved solved date. Editing a saved status or date can change past activity because the database stores current progress. The tools provide no attempt history.
+
 ## Verification and limits
+
+- At Milestone 3, `mvn clean verify` passed 66 backend tests, including 24 MCP integration cases against temporary SQLite. Coverage includes existing REST response shapes, no commits during tool calls, date boundaries in the configured timezone, and invalid input.
+- Inspector CLI discovered nine tools and verified structured results for all five reporting tools against the packaged backend on loopback port 18083. Its schema portability check reported zero errors and six warnings across four tools. Some clients may require adapting the nullable date schemas.
 
 - At Milestone 2, `mvn clean verify` passed 61 backend tests, including 19 MCP integration cases over real HTTP with a temporary SQLite database. They cover tool registration, filters, pagination, error handling, and read-only behavior. A separate SQLite observer confirmed that successful catalog tool calls committed no writes.
 - Inspector CLI discovered all four tools and successfully called all three catalog tools against the packaged backend with a temporary database on loopback port 18082.
@@ -130,5 +191,5 @@ Catalog tools only see records already in the local database. Search results are
 - Regression tests cover MCP disabled by default, malformed MCP requests returning HTTP 400, foreign Origin requests returning HTTP 403, and REST health returning HTTP 200.
 - At Milestone 1, Inspector also listed and invoked the diagnostic tool against a packaged backend on loopback port 18081. Manual checks returned HTTP 400 for malformed JSON and HTTP 403 for a non-local Host. The web UI steps are provided for manual testing.
 - The frontend's 37 tests and production build passed.
-- MCP is intended for direct loopback clients. The endpoint rejects non-loopback peers and cross-origin browser requests, and the application continues to enforce local Host headers. Docker's frontend does not forward `/mcp`.
+- MCP is intended for direct loopback clients. The endpoint rejects non-loopback peers and cross-origin browser requests, and the application continues to enforce local Host headers. Docker forwards `/mcp` through its loopback-only frontend port. The route returns HTTP 404 while MCP is disabled.
 - `ping_tracker` verifies MCP connectivity. Use REST `/api/health` for the database health check.

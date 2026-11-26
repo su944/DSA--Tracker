@@ -20,7 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-class ReportingService {
+public class ReportingService {
     private final ReportingRepository reports;
     private final GoalService goals;
     private final PlannerService planner;
@@ -35,7 +35,7 @@ class ReportingService {
         this.revisions = revisions;
     }
 
-    Summary summary() {
+    public Summary summary() {
         return reports.summary();
     }
 
@@ -46,15 +46,15 @@ class ReportingService {
         return new Today(date, plan, goals.activeOn(date), revisions.counts(date));
     }
 
-    List<TopicStats> topics(String range) {
+    public List<TopicStats> topics(String range) {
         return reports.topics(ReportingPeriod.parse(range, clock));
     }
 
-    List<DifficultyStats> difficulty(String range) {
+    public List<DifficultyStats> difficulty(String range) {
         return reports.difficulty(ReportingPeriod.parse(range, clock));
     }
 
-    Activity activity(String range) {
+    public Activity activity(String range) {
         var period = ReportingPeriod.parse(range, clock);
         var days = reports.activity(period);
         if (!period.allTime() && !days.isEmpty()) {
@@ -66,7 +66,7 @@ class ReportingService {
     }
 
     @Transactional(readOnly = true)
-    Recent recent(String range, int limit) {
+    public Recent recent(String range, int limit) {
         if (limit < 1 || limit > 50) {
             throw ApiException.invalid("limit", "Recent list size must be from 1 to 50.");
         }

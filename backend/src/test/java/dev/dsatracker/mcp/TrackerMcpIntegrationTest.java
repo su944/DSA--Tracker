@@ -16,7 +16,10 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -28,7 +31,11 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -40,6 +47,15 @@ import tools.jackson.databind.json.JsonMapper;
 class TrackerMcpIntegrationTest {
 
     private static final JsonMapper JSON = new JsonMapper();
+
+    @TestConfiguration
+    static class FixedReportingTime {
+        @Bean
+        @Primary
+        Clock reportingClock() {
+            return Clock.fixed(Instant.parse("2026-11-19T20:00:00Z"), ZoneId.of("Asia/Kolkata"));
+        }
+    }
 
     @Autowired
     JdbcTemplate jdbc;
@@ -63,7 +79,9 @@ class TrackerMcpIntegrationTest {
             assertThat(client.initialize().serverInfo().name()).isEqualTo("dsa-tracker");
             var tools = client.listTools().tools();
             assertThat(tools).extracting(Tool::name)
-                    .containsExactlyInAnyOrder("ping_tracker", "search_problems", "get_problem", "list_topics");
+                    .containsExactlyInAnyOrder("ping_tracker", "search_problems", "get_problem", "list_topics",
+                            "get_dashboard_summary", "get_topic_progress", "get_difficulty_progress",
+                            "get_solving_activity", "get_recent_problems");
             assertThat(tools).allSatisfy(tool -> {
                 assertThat(tool.annotations().readOnlyHint()).isTrue();
                 assertThat(tool.outputSchema()).isNotEmpty();
@@ -230,8 +248,165 @@ class TrackerMcpIntegrationTest {
             read(client, "search_problems", Map.of("topicNames", List.of("unknown")));
             read(client, "get_problem", Map.of("leetcodeId", 862));
             read(client, "list_topics", Map.of("query", "array"));
+            read(client, "get_dashboard_summary", Map.of());
+            read(client, "get_topic_progress", Map.of());
+            read(client, "get_difficulty_progress", Map.of());
+            read(client, "get_solving_activity", Map.of());
+            read(client, "get_recent_problems", Map.of());
             assertThat(dataVersion(observer)).isEqualTo(originalVersion);
         }
+    }
+
+    @Test
+    void reportsEmptyCatalog() {
+        jdbc.update("DELETE FROM problems");
+        jdbc.update("DELETE FROM topics");
+        try (var client = connect()) {
+            assertThat(read(client, "get_dashboard_summary", Map.of())).isEqualTo(JSON.readTree("""
+                    {"totalProblems":0,"solved":0,"attempted":0,"notStarted":0,"solvedPercentage":0.0}
+                    """));
+            assertThat(read(client, "get_topic_progress", Map.of()).path("topics").isEmpty()).isTrue();
+            var difficulty = read(client, "get_difficulty_progress", Map.of());
+            assertThat(difficulty.path("range").asString()).isEqualTo("all");
+            assertThat(difficulty.path("difficulties")).isEqualTo(JSON.readTree("""
+                    [{"difficulty":"EASY","solvedCount":0},{"difficulty":"MEDIUM","solvedCount":0},
+                     {"difficulty":"HARD","solvedCount":0}]
+                    """));
+            var activity = read(client, "get_solving_activity", Map.of());
+            assertThat(activity.path("range").asString()).isEqualTo("30");
+            assertThat(activity.path("days").isEmpty()).isTrue();
+            assertThat(activity.path("totalSolvesInRange").asInt()).isZero();
+            var recent = read(client, "get_recent_problems", Map.of());
+            assertThat(recent.path("recentlySolved").isEmpty()).isTrue();
+            assertThat(recent.path("recentlyModified").isEmpty()).isTrue();
+        }
+    }
+
+    @Test
+    void reportsCurrentStatusesMultiTopicMembershipAndRestContract() throws Exception {
+        try (var client = connect(); var http = HttpClient.newHttpClient()) {
+            var dashboard = read(client, "get_dashboard_summary", Map.of());
+            assertThat(dashboard.path("totalProblems").asInt()).isEqualTo(3);
+            assertThat(dashboard.path("solved").asInt()).isEqualTo(1);
+            assertThat(dashboard.path("attempted").asInt()).isEqualTo(1);
+            assertThat(dashboard.path("notStarted").asInt()).isEqualTo(1);
+            assertThat(dashboard.path("solvedPercentage").asDouble()).isEqualTo(100.0 / 3);
+
+            var all = read(client, "get_topic_progress", Map.of()).path("topics");
+            assertThat(all.path(0)).isEqualTo(JSON.readTree("""
+                    {"topicId":1,"topicName":"Array","totalProblems":2,"solvedProblems":1,
+                     "unsolvedProblems":1,"solvedProblemsAllTime":1,"solvedPercentage":50.0}
+                    """));
+            assertThat(all.path(2).path("solvedProblems").asInt()).isEqualTo(1);
+            var bounded = read(client, "get_topic_progress", Map.of("range", "7")).path("topics").path(0);
+            assertThat(bounded.path("solvedProblems").asInt()).isZero();
+            assertThat(bounded.path("solvedProblemsAllTime").asInt()).isEqualTo(1);
+            assertThat(bounded.path("unsolvedProblems").asInt()).isEqualTo(1);
+            assertThat(bounded.path("solvedPercentage").asDouble()).isZero();
+
+            assertThat(restJson(http, "/api/dashboard/summary")).isEqualTo(JSON.readTree("""
+                    {"total":3,"solved":1,"attempted":1,"notStarted":1}
+                    """));
+            assertThat(restJson(http, "/api/analytics/topics?range=7").path(0)).isEqualTo(JSON.readTree("""
+                    {"topicId":1,"name":"Array","total":2,"solved":0,"remaining":1}
+                    """));
+            assertThat(restJson(http, "/api/analytics/difficulty")).isEqualTo(JSON.readTree("""
+                    [{"difficulty":"HARD","solved":1}]
+                    """));
+        }
+    }
+
+    @Test
+    void usesLocalDayBoundariesAndCurrentSolvedDates() throws Exception {
+        jdbc.update("UPDATE problems SET difficulty = 'MEDIUM' WHERE id = 12");
+        jdbc.update("UPDATE problem_progress SET status = 'SOLVED', solved_date = '2026-11-14' WHERE problem_id = 11");
+        jdbc.update("UPDATE problem_progress SET status = 'SOLVED', solved_date = '2026-11-20' WHERE problem_id = 12");
+        jdbc.update("UPDATE problem_progress SET solved_date = '2026-11-13' WHERE problem_id = 13");
+        try (var client = connect(); var http = HttpClient.newHttpClient()) {
+            var activity = read(client, "get_solving_activity", Map.of("range", "7"));
+            assertThat(activity.path("startDate").asString()).isEqualTo("2026-11-14");
+            assertThat(activity.path("endDate").asString()).isEqualTo("2026-11-20");
+            assertThat(activity.path("days").valueStream().map(day -> day.path("solvedCount").asInt()).toList())
+                    .containsExactly(1, 0, 0, 0, 0, 0, 1);
+            assertThat(activity.path("totalSolvesInRange").asInt()).isEqualTo(2);
+            assertThat(read(client, "get_solving_activity", Map.of()).path("days").size()).isEqualTo(30);
+            assertThat(read(client, "get_solving_activity", Map.of("range", "90")).path("days").size()).isEqualTo(90);
+            var all = read(client, "get_solving_activity", Map.of("range", "all"));
+            assertThat(all.path("startDate").isNull()).isTrue();
+            assertThat(all.path("days").size()).isEqualTo(3);
+            assertThat(all.path("totalSolvesInRange").asInt()).isEqualTo(3);
+            assertThat(read(client, "get_difficulty_progress", Map.of("range", "7")).path("difficulties"))
+                    .isEqualTo(JSON.readTree("""
+                            [{"difficulty":"EASY","solvedCount":1},{"difficulty":"MEDIUM","solvedCount":1},
+                             {"difficulty":"HARD","solvedCount":0}]
+                            """));
+            assertThat(read(client, "get_difficulty_progress", Map.of()).path("difficulties").path(2)
+                    .path("solvedCount").asInt()).isEqualTo(1);
+            var rest = restJson(http, "/api/analytics/activity?range=7");
+            assertThat(rest.path("endDate").asString()).isEqualTo("2026-11-20");
+            assertThat(rest.path("days").path(0)).isEqualTo(JSON.readTree("""
+                    {"date":"2026-11-14","solved":1}
+                    """));
+        }
+    }
+
+    @Test
+    void treatsLegacyUndatedSolvesConsistently() {
+        jdbc.execute((ConnectionCallback<Void>) connection -> {
+            try (var sql = connection.createStatement()) {
+                sql.execute("PRAGMA ignore_check_constraints = ON");
+                try {
+                    sql.executeUpdate("UPDATE problem_progress SET solved_date = NULL WHERE problem_id = 13");
+                } finally {
+                    sql.execute("PRAGMA ignore_check_constraints = OFF");
+                }
+            }
+            return null;
+        });
+        try (var client = connect()) {
+            assertThat(read(client, "get_dashboard_summary", Map.of()).path("solved").asInt()).isEqualTo(1);
+            assertThat(read(client, "get_topic_progress", Map.of()).path("topics").path(0)
+                    .path("solvedProblems").asInt()).isEqualTo(1);
+            assertThat(read(client, "get_difficulty_progress", Map.of()).path("difficulties").path(2)
+                    .path("solvedCount").asInt()).isEqualTo(1);
+            assertThat(read(client, "get_solving_activity", Map.of("range", "all"))
+                    .path("totalSolvesInRange").asInt()).isZero();
+            var recent = read(client, "get_recent_problems", Map.of());
+            assertThat(recent.path("recentlySolved").isEmpty()).isTrue();
+            assertThat(recent.path("recentlyModified").path(0).path("solvedDate").isNull()).isTrue();
+        }
+    }
+
+    @Test
+    void appliesRecentLimitsAndRejectsInvalidFilters() throws Exception {
+        try (var client = connect(); var http = HttpClient.newHttpClient()) {
+            var recent = read(client, "get_recent_problems", Map.of("limit", 1));
+            assertThat(recent.path("recentlySolved")).isEqualTo(JSON.readTree("""
+                    [{"id":13,"leetcodeId":862,"title":"Shortest Subarray with Sum at Least K",
+                      "status":"SOLVED","solvedDate":"2025-01-02"}]
+                    """));
+            assertThat(recent.path("recentlyModified").size()).isEqualTo(1);
+            assertThat(read(client, "get_recent_problems", Map.of()).path("recentlyModified").size()).isEqualTo(3);
+            assertThat(read(client, "get_recent_problems", Map.of("limit", 50))
+                    .path("recentlyModified").size()).isEqualTo(3);
+            for (var tool : List.of("get_topic_progress", "get_difficulty_progress", "get_solving_activity")) {
+                assertError(client, tool, Map.of("range", "31"), "Choose 7, 30, 90, or all");
+            }
+            assertError(client, "get_recent_problems", Map.of("limit", 0), "from 1 to 50");
+            assertError(client, "get_recent_problems", Map.of("limit", 51), "from 1 to 50");
+            assertError(client, "get_recent_problems", Map.of("limit", 1.5), "limit");
+            var rest = restJson(http, "/api/analytics/recent?limit=1");
+            assertThat(rest.path("solved").size()).isEqualTo(1);
+            assertThat(rest.path("modified").size()).isEqualTo(1);
+            assertThat(rest.path("solved").path(0).path("difficulty").asString()).isEqualTo("HARD");
+        }
+    }
+
+    private JsonNode restJson(HttpClient client, String path) throws Exception {
+        var request = HttpRequest.newBuilder(URI.create(baseUrl() + path)).timeout(Duration.ofSeconds(5)).build();
+        var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).isEqualTo(200);
+        return JSON.readTree(response.body());
     }
 
     private static int dataVersion(Connection connection) throws SQLException {
