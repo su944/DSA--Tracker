@@ -1,6 +1,8 @@
 package dev.dsatracker.planning;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import dev.dsatracker.catalog.CatalogDtos.ProblemReference;
+import dev.dsatracker.catalog.Difficulty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import java.time.LocalDate;
@@ -16,7 +18,8 @@ public final class PlannerDtos {
     public record DateInput(@NotNull LocalDate date) {}
     public record SkipInput(@NotNull Boolean skipped) {}
 
-    public record Task(long id, LocalDate date, ProblemReference problem, TaskState state) {}
+    public record Task(long id, LocalDate date, ProblemReference problem, TaskState state,
+                       @JsonIgnore Difficulty difficulty) {}
 
     public record Counts(int planned, long completed, long skipped) {
         static Counts from(List<Task> tasks) {

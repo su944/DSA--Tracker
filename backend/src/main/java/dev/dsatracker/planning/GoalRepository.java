@@ -12,7 +12,8 @@ interface GoalRepository extends JpaRepository<Goal, Long> {
                    (select count(distinct p.id) from Problem p
                     where p.progress.status = dev.dsatracker.catalog.ProgressStatus.SOLVED
                       and p.progress.solvedDate between g.startDate and g.endDate
-                      and (g.topic is null or g.topic member of p.topics)) as solvedCount
+                      and (g.topic is null or g.topic member of p.topics)
+                      and (g.difficulty is null or p.difficulty = g.difficulty)) as solvedCount
             from Goal g left join fetch g.topic
             """;
 

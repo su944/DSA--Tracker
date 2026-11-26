@@ -81,7 +81,8 @@ class TrackerMcpIntegrationTest {
             assertThat(tools).extracting(Tool::name)
                     .containsExactlyInAnyOrder("ping_tracker", "search_problems", "get_problem", "list_topics",
                             "get_dashboard_summary", "get_topic_progress", "get_difficulty_progress",
-                            "get_solving_activity", "get_recent_problems");
+                            "get_solving_activity", "get_recent_problems", "get_daily_plan", "get_weekly_plan",
+                            "list_goals", "get_goal_progress", "get_due_revisions", "get_upcoming_revisions");
             assertThat(tools).allSatisfy(tool -> {
                 assertThat(tool.annotations().readOnlyHint()).isTrue();
                 assertThat(tool.outputSchema()).isNotEmpty();
@@ -118,6 +119,7 @@ class TrackerMcpIntegrationTest {
 
     @BeforeEach
     void seedCatalog() {
+        jdbc.update("DELETE FROM goals");
         jdbc.update("DELETE FROM problems");
         jdbc.update("DELETE FROM topics");
         String timestamp = "2025-01-01T12:00:00Z";
@@ -400,6 +402,173 @@ class TrackerMcpIntegrationTest {
             assertThat(rest.path("modified").size()).isEqualTo(1);
             assertThat(rest.path("solved").path(0).path("difficulty").asString()).isEqualTo("HARD");
         }
+    }
+
+    @Test
+    void reportsDailyAndWeeklyPlannerStatesWithoutChangingRestShape() throws Exception {
+        jdbc.update("UPDATE problem_progress SET solved_date = '2026-11-20' WHERE problem_id = 13");
+        jdbc.update("""
+                INSERT INTO plan_items (id, problem_id, planned_date, skipped)
+                VALUES (21, 13, '2026-11-20', 0), (22, 12, '2026-11-20', 1),
+                       (23, 13, '2026-11-16', 0), (24, 11, '2026-11-22', 0),
+                       (25, 11, '2026-11-23', 0)
+                """);
+        try (var client = connect(); var http = HttpClient.newHttpClient()) {
+            var day = read(client, "get_daily_plan", Map.of());
+            assertThat(day.path("date").asString()).isEqualTo("2026-11-20");
+            assertThat(day.path("totalScheduled").asInt()).isEqualTo(2);
+            assertThat(day.path("completedCount").asInt()).isEqualTo(1);
+            assertThat(day.path("skippedCount").asInt()).isEqualTo(1);
+            assertThat(day.path("scheduledProblems").path(0)).isEqualTo(JSON.readTree("""
+                    {"plannerEntryId":21,"problemId":13,"leetcodeId":862,"title":"Shortest Subarray with Sum at Least K",
+                     "difficulty":"HARD","progressStatus":"SOLVED","scheduledDate":"2026-11-20",
+                     "completed":true,"skipped":false}
+                    """));
+            var skipped = day.path("scheduledProblems").path(1);
+            assertThat(skipped.path("skipped").asBoolean()).isTrue();
+            assertThat(skipped.path("completed").asBoolean()).isFalse();
+            var week = read(client, "get_weekly_plan", Map.of("date", "2026-11-22"));
+            assertThat(week.path("startDate").asString()).isEqualTo("2026-11-16");
+            assertThat(week.path("endDate").asString()).isEqualTo("2026-11-22");
+            assertThat(week.path("totalScheduled").asInt()).isEqualTo(4);
+            assertThat(week.path("completedCount").asInt()).isEqualTo(1);
+            assertThat(week.path("skippedCount").asInt()).isEqualTo(1);
+            assertThat(week.path("days").size()).isEqualTo(7);
+            assertThat(week.path("days").path(0).path("completedCount").asInt()).isZero();
+            assertThat(week.path("days").path(6).path("totalScheduled").asInt()).isEqualTo(1);
+            var restTask = restJson(http, "/api/planner?date=2026-11-20").path("days").path(0).path("items").path(0);
+            assertThat(restTask.path("state").asString()).isEqualTo("COMPLETED");
+            assertThat(restTask.has("difficulty")).isFalse();
+        }
+    }
+
+    @Test
+    void reportsEmptyPlannerAndRevisionLists() {
+        try (var client = connect()) {
+            var day = read(client, "get_daily_plan", Map.of("date", "2026-11-19"));
+            assertThat(day.path("totalScheduled").asInt()).isZero();
+            assertThat(day.path("scheduledProblems").isEmpty()).isTrue();
+            var week = read(client, "get_weekly_plan", Map.of());
+            assertThat(week.path("totalScheduled").asInt()).isZero();
+            assertThat(week.path("days").size()).isEqualTo(7);
+            assertThat(read(client, "list_goals", Map.of()).path("goals").isEmpty()).isTrue();
+            assertThat(read(client, "get_due_revisions", Map.of()).path("revisions").isEmpty()).isTrue();
+            assertThat(read(client, "get_upcoming_revisions", Map.of()).path("revisions").isEmpty()).isTrue();
+        }
+    }
+
+    @Test
+    void filtersActiveGoalsAndUsesSavedSolveDatesAndTopicMembership() throws Exception {
+        seedStudyGoals();
+        try (var client = connect(); var http = HttpClient.newHttpClient()) {
+            var all = read(client, "list_goals", Map.of()).path("goals");
+            assertThat(all.size()).isEqualTo(4);
+            var active = read(client, "list_goals", Map.of("activeOnly", true)).path("goals");
+            assertThat(active.valueStream().map(goal -> goal.path("goalId").asInt()).toList())
+                    .containsExactlyInAnyOrder(31, 32);
+            var goal = read(client, "get_goal_progress", Map.of("goalId", 31));
+            assertThat(goal).isEqualTo(JSON.readTree("""
+                    {"goalId":31,"name":"Array week","type":"WEEKLY","startDate":"2026-11-16",
+                     "endDate":"2026-11-22","targetCount":2,"solvedCount":1,"remainingCount":1,
+                     "completionPercentage":50.0,"complete":false,"topicId":1,"topicName":"Array","difficulty":null}
+                    """));
+            var unrestricted = read(client, "get_goal_progress", Map.of("goalId", 32));
+            assertThat(unrestricted.path("topicId").isNull()).isTrue();
+            assertThat(unrestricted.path("solvedCount").asInt()).isEqualTo(2);
+            assertThat(unrestricted.path("remainingCount").asInt()).isZero();
+            assertThat(unrestricted.path("completionPercentage").asDouble()).isEqualTo(100);
+            assertThat(unrestricted.path("complete").asBoolean()).isTrue();
+            assertThat(restJson(http, "/api/goals/31/progress")).isEqualTo(JSON.readTree("""
+                    {"solvedCount":1,"targetCount":2,"remainingCount":1,"complete":false}
+                    """));
+            assertError(client, "get_goal_progress", Map.of("goalId", 999), "Goal not found");
+        }
+    }
+
+    @Test
+    void reportsDueAndUpcomingRevisionBoundariesAndLatestReviewInTrackerTimezone() throws Exception {
+        seedStudyRevisions();
+        try (var client = connect(); var http = HttpClient.newHttpClient()) {
+            var due = read(client, "get_due_revisions", Map.of());
+            assertThat(due.path("date").asString()).isEqualTo("2026-11-20");
+            assertThat(revisionIds(due)).containsExactly(41, 42);
+            assertThat(due.path("revisions").path(0).path("overdue").asBoolean()).isTrue();
+            assertThat(due.path("revisions").path(1).path("overdue").asBoolean()).isFalse();
+            assertThat(revisionIds(read(client, "get_due_revisions", Map.of("date", "2026-11-19"))))
+                    .containsExactly(41);
+            assertThat(revisionIds(read(client, "get_due_revisions", Map.of("limit", 1)))).containsExactly(41);
+            var upcoming = read(client, "get_upcoming_revisions", Map.of());
+            assertThat(upcoming.path("fromDate").asString()).isEqualTo("2026-11-20");
+            assertThat(upcoming.path("endDate").asString()).isEqualTo("2026-11-26");
+            assertThat(revisionIds(upcoming)).containsExactly(42, 43);
+            assertThat(upcoming.path("revisions").path(0).path("latestReviewedDate").asString())
+                    .isEqualTo("2026-11-20");
+            assertThat(upcoming.path("revisions").path(1).path("latestReviewedDate").isNull()).isTrue();
+            assertThat(upcoming.path("revisions").path(1).path("difficulty").asString()).isEqualTo("EASY");
+            assertThat(revisionIds(read(client, "get_upcoming_revisions",
+                    Map.of("fromDate", "2026-11-26", "days", 2, "limit", 100)))).containsExactly(43, 44);
+            assertThat(revisionIds(read(client, "get_upcoming_revisions", Map.of("days", 90, "limit", 1))))
+                    .containsExactly(42);
+            var rest = restJson(http, "/api/revisions?filter=UPCOMING");
+            assertThat(rest.path("items").size()).isEqualTo(2);
+            assertThat(rest.path("items").path(0).path("scheduledDate").asString()).isEqualTo("2026-11-26");
+            assertThat(rest.path("items").path(0).has("latestReviewedDate")).isFalse();
+        }
+    }
+
+    @Test
+    void studyToolsValidateInputsAndDoNotCommitWrites() throws SQLException {
+        seedStudyGoals();
+        seedStudyRevisions();
+        try (var observer = DriverManager.getConnection("jdbc:sqlite:" + temporaryDirectory.resolve("test.sqlite"));
+                var client = connect()) {
+            int originalVersion = dataVersion(observer);
+            read(client, "get_daily_plan", Map.of());
+            read(client, "get_weekly_plan", Map.of());
+            read(client, "list_goals", Map.of());
+            read(client, "get_goal_progress", Map.of("goalId", 31));
+            read(client, "get_due_revisions", Map.of());
+            read(client, "get_upcoming_revisions", Map.of());
+            assertError(client, "get_daily_plan", Map.of("date", "2026-02-30"), "YYYY-MM-DD");
+            assertError(client, "get_weekly_plan", Map.of("date", "2026-1-02"), "YYYY-MM-DD");
+            assertError(client, "get_due_revisions", Map.of("date", "0000-01-01"), "YYYY-MM-DD");
+            assertError(client, "get_upcoming_revisions", Map.of("fromDate", "tomorrow"), "YYYY-MM-DD");
+            assertError(client, "get_upcoming_revisions", Map.of("fromDate", "9999-12-31"), "0001 to 9999");
+            assertError(client, "get_upcoming_revisions", Map.of("days", 91), "from 1 to 90");
+            assertError(client, "get_upcoming_revisions", Map.of("limit", 101), "from 1 to 100");
+            assertError(client, "get_due_revisions", Map.of("limit", 0), "from 1 to 100");
+            assertError(client, "get_goal_progress", Map.of("goalId", 0), "Goal ID must be positive");
+            assertThat(dataVersion(observer)).isEqualTo(originalVersion);
+        }
+    }
+
+    private void seedStudyGoals() {
+        jdbc.update("UPDATE problem_progress SET solved_date = '2026-11-20' WHERE problem_id = 13");
+        jdbc.update("UPDATE problem_progress SET status = 'SOLVED', solved_date = '2026-11-20' WHERE problem_id = 12");
+        jdbc.update("""
+                INSERT INTO goals (id, name, type, start_date, end_date, target_count, topic_id)
+                VALUES (31, 'Array week', 'WEEKLY', '2026-11-16', '2026-11-22', 2, 1),
+                       (32, 'Today', 'DAILY', '2026-11-20', '2026-11-20', 1, NULL),
+                       (33, 'Expired', 'DAILY', '2026-11-19', '2026-11-19', 1, NULL),
+                       (34, 'Future', 'DAILY', '2026-11-21', '2026-11-21', 1, NULL)
+                """);
+    }
+
+    private void seedStudyRevisions() {
+        jdbc.update("""
+                INSERT INTO revision_tasks (id, problem_id, scheduled_date, status, completed_at, created_at, updated_at)
+                VALUES (41, 13, '2026-11-19', 'SCHEDULED', NULL, ?, ?),
+                       (42, 13, '2026-11-20', 'SCHEDULED', NULL, ?, ?),
+                       (43, 12, '2026-11-26', 'SCHEDULED', NULL, ?, ?),
+                       (44, 13, '2026-11-27', 'SCHEDULED', NULL, ?, ?),
+                       (45, 13, '2026-11-17', 'COMPLETED', '2026-11-19T19:00:00.000Z', ?, ?),
+                       (46, 13, '2026-11-18', 'CANCELLED', NULL, ?, ?),
+                       (47, 13, '2026-11-16', 'COMPLETED', '2026-11-18T19:00:00.000Z', ?, ?)
+                """, java.util.Collections.nCopies(14, "2026-11-13T12:00:00.000Z").toArray());
+    }
+
+    private static List<Integer> revisionIds(JsonNode payload) {
+        return payload.path("revisions").valueStream().map(item -> item.path("revisionId").asInt()).toList();
     }
 
     private JsonNode restJson(HttpClient client, String path) throws Exception {

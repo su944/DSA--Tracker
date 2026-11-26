@@ -68,12 +68,21 @@ public class ProblemService {
 
     @Transactional(readOnly = true)
     public ProblemView getByLeetcodeId(long leetcodeId) {
+        return get(requireIdByLeetcodeId(leetcodeId));
+    }
+
+    @Transactional(readOnly = true)
+    public long requireIdByLeetcodeId(long leetcodeId) {
         if (leetcodeId <= 0) {
             throw ApiException.invalid("leetcodeId", "LeetCode ID must be positive.");
         }
-        long id = problems.findIdByLeetcodeId(leetcodeId)
+        return problems.findIdByLeetcodeId(leetcodeId)
                 .orElseThrow(() -> ApiException.missing("No problem found with LeetCode ID " + leetcodeId + "."));
-        return get(id);
+    }
+
+    @Transactional
+    public ProgressView updateProgressByLeetcodeId(long leetcodeId, ProgressPatch patch) {
+        return updateProgress(requireIdByLeetcodeId(leetcodeId), patch);
     }
 
     @Transactional(readOnly = true)

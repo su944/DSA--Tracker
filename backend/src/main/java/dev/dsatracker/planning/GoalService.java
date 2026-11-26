@@ -3,6 +3,7 @@ package dev.dsatracker.planning;
 import dev.dsatracker.api.ApiException;
 import dev.dsatracker.catalog.TopicRepository;
 import dev.dsatracker.planning.GoalDtos.GoalInput;
+import dev.dsatracker.planning.GoalDtos.GoalPatch;
 import dev.dsatracker.planning.GoalDtos.GoalView;
 import java.time.LocalDate;
 import java.util.List;
@@ -20,7 +21,7 @@ public class GoalService {
     }
 
     @Transactional(readOnly = true)
-    List<GoalView> list() {
+    public List<GoalView> list() {
         return goals.listWithProgress().stream().map(GoalView::from).toList();
     }
 
@@ -30,13 +31,13 @@ public class GoalService {
     }
 
     @Transactional(readOnly = true)
-    GoalView get(long id) {
+    public GoalView get(long id) {
         PlanningDates.requirePositiveId(id);
         return GoalView.from(goals.findWithProgress(id).orElseThrow(() -> ApiException.missing("Goal not found.")));
     }
 
     @Transactional
-    GoalView create(GoalInput input) {
+    public GoalView create(GoalInput input) {
         var goal = new Goal();
         apply(goal, input);
         return get(goals.saveAndFlush(goal).id);
@@ -50,11 +51,34 @@ public class GoalService {
     }
 
     @Transactional
+    public GoalView patch(long id, GoalPatch patch) {
+        var current = get(id);
+        var progress = current.progress();
+        Long topicId = current.topic() == null ? null : current.topic().id();
+        LocalDate end = patch.endDate();
+        if (end == null && (patch.startDate() == null || current.type() == GoalDtos.GoalType.CUSTOM)) {
+            end = current.endDate();
+        }
+        var input = new GoalInput(patch.name() == null ? current.name() : patch.name(), current.type(),
+                patch.startDate() == null ? current.startDate() : patch.startDate(), end,
+                patch.targetCount() == null ? progress.targetCount() : patch.targetCount(),
+                patch.topicProvided() ? patch.topicId() : topicId);
+        if (patch.difficultyProvided()) input.setDifficulty(patch.difficulty());
+        return update(id, input);
+    }
+
+    @Transactional
     void delete(long id) {
         goals.delete(requireGoal(id));
     }
 
     private void apply(Goal goal, GoalInput input) {
+        if (input.name() == null || input.name().isBlank() || input.name().length() > 100) {
+            throw ApiException.invalid("name", "Enter a nonblank goal name of at most 100 characters.");
+        }
+        if (input.targetCount() == null || input.targetCount() < 1) {
+            throw ApiException.invalid("targetCount", "Target count must be positive.");
+        }
         var start = PlanningDates.checked("startDate", input.startDate());
         var end = switch (input.type()) {
             case DAILY -> start;

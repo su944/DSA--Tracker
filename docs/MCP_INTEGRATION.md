@@ -1,6 +1,6 @@
 # MCP integration
 
-The existing Java 21 Spring Boot application serves REST and can opt in to a local MCP endpoint. The server exposes `ping_tracker`, three read-only catalog tools, and five read-only reporting tools. Tool results include structured JSON. Catalog tools read the local SQLite catalog through the same application services used by REST.
+The existing Java 21 Spring Boot application serves REST and can opt in to a local MCP endpoint. The server exposes `ping_tracker`, three read-only catalog tools, five read-only reporting tools, and six read-only study tools. Tool results include structured JSON. Catalog tools read the local SQLite catalog through the same application services used by REST.
 
 ## Dependencies and transport
 
@@ -180,7 +180,148 @@ Optional integer `limit` defaults to 10 and accepts 1 through 50 per list. Retur
 
 An undated problem with saved status `SOLVED` counts in the dashboard and all-time topic and difficulty totals. Bounded solve counts, solving activity, and recently solved entries require a saved solved date. Editing a saved status or date can change past activity because the database stores current progress. The tools provide no attempt history.
 
+## Milestone 4 · Planner, goals, and revisions
+
+The study tools read the same SQLite records as the web app. Date arguments must be ISO calendar dates in `YYYY-MM-DD` format with years 0001 through 9999. Missing dates resolve to today in the zone configured by `TRACKER_TIME_ZONE`, or the application runtime zone when unset. Planner days, goal periods, and revision dates are calendar dates. The latest review timestamp is converted to a date in the tracker zone.
+
+In Inspector, connect over **Streamable HTTP**, open **Tools → List Tools**, and select a tool. Inspect **structuredContent** after submitting the arguments. CLI examples:
+
+```sh
+endpoint=http://127.0.0.1:8080/mcp
+inspector() { npx -y @modelcontextprotocol/inspector@2.16.0 --cli "$endpoint" --transport http "$@"; }
+inspector --method tools/call --tool-name get_daily_plan
+inspector --method tools/call --tool-name get_weekly_plan --tool-args-json '{"date":"2026-11-20"}'
+inspector --method tools/call --tool-name list_goals --tool-args-json '{"activeOnly":true}'
+inspector --method tools/call --tool-name get_goal_progress --tool-args-json '{"goalId":1}'
+inspector --method tools/call --tool-name get_due_revisions --tool-args-json '{"limit":10}'
+inspector --method tools/call --tool-name get_upcoming_revisions --tool-args-json '{"days":14,"limit":20}'
+```
+
+Use an existing `goalId` for the goal details example. You can find one with `list_goals`.
+
+### get_daily_plan
+
+Optional string `date`. The result has `date`, integer `totalScheduled`, `completedCount`, and `skippedCount`, and a `scheduledProblems` array. Each entry includes integer `plannerEntryId`, `problemId`, and `leetcodeId`, string `title`, `difficulty`, `progressStatus`, ISO `scheduledDate`, and boolean `completed` and `skipped`. The total includes skipped entries. The existing planner marks a non-skipped entry complete only when its problem's current status is SOLVED and its saved solved date matches the scheduled date. Empty days return zero counts and an empty array.
+
+### get_weekly_plan
+
+Optional string `date` selects its Monday–Sunday week. The result includes `startDate`, `endDate`, the same three aggregate counts, and `days`, an array of seven daily plan objects, including empty days.
+
+### list_goals
+
+Optional boolean `activeOnly` defaults to false. When true, the list includes goals whose inclusive period contains tracker today, including completed goals still in that period. Returns `{goals}`, an array of objects with `goalId`, `name`, `type`, `startDate`, `endDate`, integer `targetCount` and `currentCount`, numeric `completionPercentage`, and nullable `topicId`. No matching goals gives an empty array.
+
+### get_goal_progress
+
+Required positive integer `goalId`. The result includes `goalId`, `name`, `type`, `startDate`, `endDate`, integer `targetCount`, `solvedCount`, and `remainingCount`, numeric `completionPercentage`, boolean `complete`, and nullable `topicId` and `topicName`. Percentages are capped at 100. Existing goal criteria count distinct currently solved problems using saved solve dates and current topic membership. Unknown IDs return a tool error.
+
+### get_due_revisions
+
+Optional string `date` sets the inclusive cutoff. Optional integer `limit` defaults to 20 and accepts 1–100. Returns `{date, revisions}`. Each item includes `revisionId`, `problemId`, `leetcodeId`, `title`, `difficulty`, ISO `nextRevisionDate`, and boolean `overdue`, which is true for dates strictly before the requested cutoff.
+
+### get_upcoming_revisions
+
+Optional string `fromDate` starts the window. Optional integer `days` defaults to 7 and accepts 1–90, including the first date. Optional integer `limit` defaults to 20 and accepts 1–100. Returns `{fromDate, endDate, revisions}`. Entries have the same identifying fields and `nextRevisionDate` as the due list, plus nullable ISO `latestReviewedDate` from the latest recorded completion for that problem.
+
+Both revision tools use the implemented revision queue. They include scheduled rows only, sorted by scheduled date and then revision ID, with the limit applied in SQLite. A problem with several scheduled reviews can appear more than once. A review on the selected date can appear in both the due and upcoming results. Empty windows return an empty revisions array. The tools do not infer missing schedules or review dates.
+
+## Milestone 5A · Opt-in progress and planner writes
+
+MCP write tools require both `TRACKER_MCP_ENABLED=true` and `TRACKER_MCP_WRITES_ENABLED=true`. Writes default to false and the read tools remain available when only MCP is enabled. The existing loopback, Host, and Origin checks apply to writes. Clients should show the target and proposed change and obtain explicit user approval before calling a write tool. Approval is a client responsibility. Turning on the server flag permits local clients to call the tools.
+
+Native backend:
+
+```sh
+TRACKER_MCP_ENABLED=true TRACKER_MCP_WRITES_ENABLED=true ./scripts/dev-backend.sh
+```
+
+Docker Compose with the original database bind mount:
+
+```sh
+TRACKER_MCP_ENABLED=true TRACKER_MCP_WRITES_ENABLED=true \
+  docker compose -f compose.yaml -f compose.bind-db.yaml up -d --build
+```
+
+For the standard Docker volume, use `docker compose up -d --build` with the same variables. Set `TRACKER_MCP_WRITES_ENABLED=false` and restart the native backend or run Compose `up` again to disable writes.
+
+### update_problem_progress
+
+Required `leetcodeId` (positive integer) and `status` (`NOT_STARTED`, `ATTEMPTED`, or `SOLVED`). Optional `attemptedDate` and `solvedDate` accept an ISO calendar date (`YYYY-MM-DD`) or JSON null. Omission preserves the existing date where applicable or uses the existing status transition defaults in the tracker timezone. An explicit null clears an optional date or is rejected if the chosen status requires a date. Optional `comments` accepts up to 10,000 characters. Omit it to preserve comments or send an empty string to clear them. JSON null comments are rejected.
+
+Returns `leetcodeId`, `status`, nullable `attemptedDate` and `solvedDate`, `comments`, and `updatedAt`. The existing progress service handles associated revision reconciliation in the same transaction.
+
+### schedule_problem
+
+Required positive integer `leetcodeId` and ISO string `date`. An unknown problem or an existing schedule for that problem and date returns an MCP tool error. Returns the created entry using the same fields as an item in `get_daily_plan`.
+
+### reschedule_problem
+
+Required positive integer `plannerEntryId` and ISO string `date`. The existing planner rules prevent moves of completed tasks and duplicate schedules. Skipped entries remain skipped when moved. Returns the updated entry in the same shape as `schedule_problem`.
+
+### Inspector examples
+
+Connect over Streamable HTTP to the local `/mcp` endpoint, then use **Tools → List Tools** to verify that the three write tools appear only when enabled. The examples below change data. Use a test database or approve the target and changes before running them.
+
+```sh
+endpoint=http://127.0.0.1:8080/mcp
+inspector() { npx -y @modelcontextprotocol/inspector@2.16.0 --cli "$endpoint" --transport http "$@"; }
+inspector --method tools/call --tool-name update_problem_progress --tool-args-json '{"leetcodeId":862,"status":"SOLVED","attemptedDate":null}'
+inspector --method tools/call --tool-name schedule_problem --tool-args-json '{"leetcodeId":862,"date":"2026-11-27"}'
+inspector --method tools/call --tool-name reschedule_problem --tool-args-json '{"plannerEntryId":1,"date":"2026-11-28"}'
+```
+
+Use the `plannerEntryId` returned by scheduling for the reschedule example. Milestone 5B adds separate goal and revision tools below.
+
+## Milestone 5B · Opt-in goal and revision writes
+
+These tools use the same `TRACKER_MCP_ENABLED=true` and `TRACKER_MCP_WRITES_ENABLED=true` switches as the other write tools. Clients should show the proposed change and obtain explicit user approval before each call.
+
+Flyway migration `V5__goal_difficulty.sql` adds a nullable difficulty restriction to goals. Existing goals retain their behavior. Goal REST responses and MCP goal reads include `difficulty`. REST POST and PUT accept `EASY`, `MEDIUM`, `HARD`, or null. On a REST PUT, omitting difficulty preserves the existing restriction. Explicit null clears it.
+
+Goal progress counts distinct problems whose current status is SOLVED and whose saved solved dates are inside the inclusive goal period. If a topic or difficulty restriction is present, the problem must match it. When both are set, the problem must match both.
+
+### create_goal
+
+Required inputs are string `name`, `type` (`DAILY`, `WEEKLY`, or `CUSTOM`), ISO `startDate`, and positive integer `targetCount`. Optional inputs are ISO `endDate` (required for CUSTOM), string `topicName`, and `difficulty` (`EASY`, `MEDIUM`, or `HARD`). Topics are matched case-insensitively against existing names. Unknown names are rejected. Weekly periods start Monday. Daily and weekly end dates are derived if omitted.
+
+Returns the same fields as `get_goal_progress`, including `goalId`, period dates, progress counts and percentage, and nullable topic and difficulty restrictions. Creating a goal leaves the planner untouched.
+
+### update_goal
+
+Required positive integer `goalId`. Optional inputs are `name`, `targetCount`, `topicName`, `difficulty`, `startDate`, and `endDate`. Omitted fields retain their values, with the daily or weekly end date recalculated when its start changes. Use JSON null for `topicName` or `difficulty` to clear that restriction. Other fields reject null. The goal type stays fixed. Returns the updated goal in the same shape as `create_goal`.
+
+### complete_revision
+
+Required positive integer `leetcodeId`. Optional ISO `reviewedDate` defaults to today in the tracker timezone and cannot be in the future. The service completes the earliest scheduled revision for the problem, breaking ties by revision ID. The existing seven-day rule schedules the follow-up from the review date. A historical review is recorded at the start of that date in the tracker timezone. Problem status and saved solve dates stay intact.
+
+The response contains `revisionId`, `problemId`, `leetcodeId`, `title`, `scheduledDate`, `status`, `completedAt`, and `nextRevisionDate`. Unknown problems and problems with no scheduled revision return a tool error. Completion changes which revision is earliest. Repeating the call may complete another scheduled revision, so clients should avoid automatic retries.
+
+### Inspector examples
+
+With an approved target or a temporary database, connect over Streamable HTTP and call:
+
+```sh
+endpoint=http://127.0.0.1:8080/mcp
+inspector() { npx -y @modelcontextprotocol/inspector@2.16.0 --cli "$endpoint" --transport http "$@"; }
+inspector --method tools/call --tool-name create_goal --tool-args-json '{"name":"Hard DP","type":"CUSTOM","startDate":"2026-11-26","endDate":"2026-12-02","targetCount":10,"topicName":"Dynamic Programming","difficulty":"HARD"}'
+inspector --method tools/call --tool-name update_goal --tool-args-json '{"goalId":1,"targetCount":12,"difficulty":null}'
+inspector --method tools/call --tool-name complete_revision --tool-args-json '{"leetcodeId":862,"reviewedDate":"2026-11-26"}'
+```
+
+Use the goal ID returned by creation and a problem that has a scheduled revision.
+
 ## Verification and limits
+
+- At Milestone 5B, `mvn clean verify` passed 82 backend tests. The V4-to-V5 test preserved existing goals, and integration tests verified filter combinations, partial updates, REST compatibility, and revision completion without changing problem progress. The frontend's 37 tests and production build passed.
+- Inspector CLI discovered 21 tools and invoked all three new tools against a packaged backend with temporary SQLite on loopback port 18086. Its schema portability check reported zero errors and 19 warnings across 10 tools.
+- Goal difficulty can be set through MCP or REST. The current web goal form has no difficulty selector.
+
+- At Milestone 5A, `mvn clean verify` passed 76 backend tests. MCP integration tests verified 15 read tools with writes disabled and 18 tools with writes enabled. Temporary SQLite tests verified progress persistence, omitted and null values, duplicate scheduling, completion and skip rules, REST compatibility, and rollback on an injected revision failure.
+- Compose configuration validated with either value of the writes switch. Inspector CLI discovered and invoked all three enabled write tools against a packaged backend on loopback port 18085 with a temporary database. Its portability check reported zero errors and 14 warnings across eight tools. Some clients may require adapting nullable schemas.
+
+- At Milestone 4, `mvn clean verify` passed 71 backend tests, including 29 MCP integration cases. Tests exercised planner counts, goal progress, bounded revision queries, invalid inputs, existing REST response shapes, and SQLite read-only behavior with temporary databases.
+- Inspector CLI discovered all 15 tools and called all six study tools against the packaged backend on loopback port 18084. Its portability check reported zero schema errors and ten warnings across seven tools. Clients with restricted schema dialects may require adapting nullable fields.
+- All 37 frontend tests and the production frontend build passed at Milestone 4.
 
 - At Milestone 3, `mvn clean verify` passed 66 backend tests, including 24 MCP integration cases against temporary SQLite. Coverage includes existing REST response shapes, no commits during tool calls, date boundaries in the configured timezone, and invalid input.
 - Inspector CLI discovered nine tools and verified structured results for all five reporting tools against the packaged backend on loopback port 18083. Its schema portability check reported zero errors and six warnings across four tools. Some clients may require adapting the nullable date schemas.

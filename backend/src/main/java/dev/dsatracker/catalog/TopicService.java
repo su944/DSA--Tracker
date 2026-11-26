@@ -51,6 +51,15 @@ public class TopicService {
         return TopicView.from(topics.save(topic));
     }
 
+    @Transactional(readOnly = true)
+    public long requireExistingId(String name) {
+        if (name.isBlank() || name.length() > 80) {
+            throw ApiException.invalid("topicName", "Enter a nonblank topic name of at most 80 characters.");
+        }
+        return topics.findByNameKey(Topic.comparisonKey(name)).map(topic -> topic.id)
+                .orElseThrow(() -> ApiException.invalid("topicName", "No topic found with that name."));
+    }
+
     @Transactional
     public long resolveId(String name) {
         return topics.findByNameKey(Topic.comparisonKey(name))

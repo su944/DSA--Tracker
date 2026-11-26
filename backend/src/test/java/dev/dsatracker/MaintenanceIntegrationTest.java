@@ -268,10 +268,33 @@ class MaintenanceIntegrationTest {
         String url = "jdbc:sqlite:" + temporaryDirectory.resolve("upgrade-v3.sqlite");
         var previous = Flyway.configure().dataSource(url, "", "").target("3").load();
         assertThat(previous.migrate().migrationsExecuted).isEqualTo(3);
-        var current = Flyway.configure().dataSource(url, "", "").load();
+        var current = Flyway.configure().dataSource(url, "", "").target("4").load();
         assertThat(current.migrate().migrationsExecuted).isEqualTo(1);
         assertThat(current.info().current().getVersion().getVersion()).isEqualTo("4");
         assertThat(current.migrate().migrationsExecuted).isZero();
+    }
+
+    @Test
+    void preservesExistingGoalsWhenAddingDifficultyInV5() throws Exception {
+        String url = "jdbc:sqlite:" + temporaryDirectory.resolve("upgrade-v4.sqlite");
+        Flyway.configure().dataSource(url, "", "").target("4").load().migrate();
+        try (var database = DriverManager.getConnection(url); var sql = database.createStatement()) {
+            sql.executeUpdate("""
+                    INSERT INTO goals (id, name, type, start_date, end_date, target_count)
+                    VALUES (7, 'Existing goal', 'DAILY', '2026-11-20', '2026-11-20', 4)
+                    """);
+        }
+        var current = Flyway.configure().dataSource(url, "", "").load();
+        assertThat(current.migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(current.info().current().getVersion().getVersion()).isEqualTo("5");
+        current.validate();
+        try (var database = DriverManager.getConnection(url); var sql = database.createStatement();
+             var goal = sql.executeQuery("SELECT name, target_count, difficulty FROM goals WHERE id = 7")) {
+            assertThat(goal.next()).isTrue();
+            assertThat(goal.getString("name")).isEqualTo("Existing goal");
+            assertThat(goal.getInt("target_count")).isEqualTo(4);
+            assertThat(goal.getString("difficulty")).isNull();
+        }
     }
 
     private static void insertTopic(String url, String name) throws Exception {

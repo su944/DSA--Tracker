@@ -1,6 +1,7 @@
 package dev.dsatracker.planning;
 
 import dev.dsatracker.catalog.DateColumns;
+import dev.dsatracker.catalog.Difficulty;
 import dev.dsatracker.catalog.Topic;
 import dev.dsatracker.planning.GoalDtos.GoalType;
 import jakarta.persistence.Column;
@@ -45,6 +46,9 @@ public class Goal {
     @JoinColumn(name = "topic_id")
     Topic topic;
 
+    @Enumerated(EnumType.STRING)
+    Difficulty difficulty;
+
     protected Goal() {}
 
     void edit(GoalDtos.GoalInput input, LocalDate end, Topic topic) {
@@ -54,5 +58,6 @@ public class Goal {
         endDate = end;
         targetCount = input.targetCount();
         this.topic = topic;
+        if (input.difficultyProvided()) difficulty = input.difficulty();
     }
 }

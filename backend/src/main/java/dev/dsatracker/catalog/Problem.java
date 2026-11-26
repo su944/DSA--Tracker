@@ -68,6 +68,10 @@ public class Problem {
         progress = new ProblemProgress(this, now);
     }
 
+    public Difficulty difficulty() {
+        return difficulty;
+    }
+
     public CatalogDtos.ProblemReference reference() {
         return new CatalogDtos.ProblemReference(id, leetcodeId, title, progress.status, progress.solvedDate);
     }

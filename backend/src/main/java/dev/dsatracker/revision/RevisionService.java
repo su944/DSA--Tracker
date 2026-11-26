@@ -7,10 +7,12 @@ import dev.dsatracker.catalog.ProgressStatus;
 import dev.dsatracker.revision.RevisionDtos.Counts;
 import dev.dsatracker.revision.RevisionDtos.Filter;
 import dev.dsatracker.revision.RevisionDtos.Queue;
+import dev.dsatracker.revision.RevisionDtos.ScheduledReview;
 import dev.dsatracker.revision.RevisionDtos.Status;
 import dev.dsatracker.revision.RevisionDtos.Task;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Objects;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +35,16 @@ public class RevisionService {
     Queue queue(Filter filter) {
         var today = LocalDate.now(clock);
         return new Queue(today, counts(today), revisions.list(today, filter));
+    }
+
+    @Transactional(readOnly = true)
+    public List<ScheduledReview> scheduledBetween(LocalDate start, LocalDate end, int limit) {
+        checkedDate(start);
+        checkedDate(end);
+        if (limit < 1 || limit > 100) {
+            throw ApiException.invalid("limit", "Revision limit must be from 1 to 100.");
+        }
+        return revisions.scheduledBetween(start, end, limit);
     }
 
     public Counts counts(LocalDate date) {
@@ -64,6 +76,28 @@ public class RevisionService {
 
     @Transactional
     Task finish(long id, Status status) {
+        return finish(id, status, LocalDate.now(clock));
+    }
+
+    public record CompletedReview(Task revision, LocalDate nextRevisionDate) {}
+
+    @Transactional
+    public CompletedReview completeByLeetcodeId(long leetcodeId, LocalDate reviewedDate) {
+        if (leetcodeId < 1) throw ApiException.invalid("leetcodeId", "LeetCode ID must be positive.");
+        var date = reviewedDate == null ? LocalDate.now(clock) : reviewedDate;
+        checkedDate(date);
+        if (date.isAfter(LocalDate.now(clock))) {
+            throw ApiException.invalid("reviewedDate", "Review date cannot be later than today.");
+        }
+        long problemId = problems.findIdByLeetcodeId(leetcodeId)
+                .orElseThrow(() -> ApiException.missing("No problem found with LeetCode ID " + leetcodeId + "."));
+        long revisionId = revisions.firstScheduledId(problemId)
+                .orElseThrow(() -> ApiException.missing("No active revision found for LeetCode ID " + leetcodeId + "."));
+        checkedDate(date.plusDays(INTERVAL_DAYS));
+        return new CompletedReview(finish(revisionId, Status.COMPLETED, date), date.plusDays(INTERVAL_DAYS));
+    }
+
+    private Task finish(long id, Status status, LocalDate reviewedDate) {
         var task = get(id);
         if (task.status() == status) return task;
         if (task.status() != Status.SCHEDULED) {
@@ -73,9 +107,11 @@ public class RevisionService {
         if (status == Status.COMPLETED) {
             requireSolved(task.problemId());
         }
-        revisions.close(id, status, timestamp);
+        String completedAt = reviewedDate.equals(LocalDate.now(clock)) ? timestamp
+                : timestamps.convertToDatabaseColumn(reviewedDate.atStartOfDay(clock.getZone()).toInstant());
+        revisions.close(id, status, timestamp, completedAt);
         if (status == Status.COMPLETED) {
-            revisions.insert(task.problemId(), LocalDate.now(clock).plusDays(INTERVAL_DAYS), timestamp, false);
+            revisions.insert(task.problemId(), reviewedDate.plusDays(INTERVAL_DAYS), timestamp, false);
         }
         return get(id);
     }

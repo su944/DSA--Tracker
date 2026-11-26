@@ -2,6 +2,7 @@ package dev.dsatracker.planning;
 
 import dev.dsatracker.api.ApiException;
 import dev.dsatracker.catalog.ProblemRepository;
+import dev.dsatracker.catalog.ProblemService;
 import dev.dsatracker.catalog.ProgressStatus;
 import dev.dsatracker.planning.PlannerDtos.Calendar;
 import dev.dsatracker.planning.PlannerDtos.Counts;
@@ -21,11 +22,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class PlannerService {
     private final PlanItemRepository items;
     private final ProblemRepository problems;
+    private final ProblemService catalog;
     private final Clock clock;
 
-    PlannerService(PlanItemRepository items, ProblemRepository problems, Clock clock) {
+    PlannerService(PlanItemRepository items, ProblemRepository problems, ProblemService catalog, Clock clock) {
         this.items = items;
         this.problems = problems;
+        this.catalog = catalog;
         this.clock = clock;
     }
 
@@ -51,6 +54,11 @@ public class PlannerService {
     }
 
     @Transactional
+    public Task scheduleByLeetcodeId(long leetcodeId, LocalDate date) {
+        return schedule(new PlanInput(catalog.requireIdByLeetcodeId(leetcodeId), date));
+    }
+
+    @Transactional
     Task schedule(PlanInput input) {
         LocalDate date = PlanningDates.checked("date", input.date());
         var problem = problems.findById(input.problemId()).orElseThrow(() -> ApiException.missing("Problem not found."));
@@ -59,7 +67,7 @@ public class PlannerService {
     }
 
     @Transactional
-    Task reschedule(long id, LocalDate newDate) {
+    public Task reschedule(long id, LocalDate newDate) {
         var item = requireItem(id);
         LocalDate date = PlanningDates.checked("date", newDate);
         if (!item.date.equals(date)) {
@@ -112,7 +120,7 @@ public class PlannerService {
         } else if (problem.status() == ProgressStatus.SOLVED && item.date.equals(problem.solvedDate())) {
             state = TaskState.COMPLETED;
         }
-        return new Task(item.id, item.date, problem, state);
+        return new Task(item.id, item.date, problem, state, item.problem.difficulty());
     }
 
     private static void requireIncomplete(Task task) {

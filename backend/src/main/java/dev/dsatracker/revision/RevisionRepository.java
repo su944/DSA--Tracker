@@ -1,6 +1,8 @@
 package dev.dsatracker.revision;
 
+import dev.dsatracker.catalog.Difficulty;
 import dev.dsatracker.revision.RevisionDtos.Counts;
+import dev.dsatracker.revision.RevisionDtos.ScheduledReview;
 import dev.dsatracker.revision.RevisionDtos.Filter;
 import dev.dsatracker.revision.RevisionDtos.Status;
 import dev.dsatracker.revision.RevisionDtos.Task;
@@ -44,6 +46,32 @@ class RevisionRepository {
                 RevisionRepository::task, closed ? new Object[]{} : new Object[]{today.toString()});
     }
 
+    List<ScheduledReview> scheduledBetween(LocalDate start, LocalDate end, int limit) {
+        return jdbc.query("""
+                SELECT r.id, r.problem_id, p.leetcode_id, p.title, p.difficulty, r.scheduled_date,
+                       (SELECT MAX(done.completed_at)
+                        FROM revision_tasks done
+                        WHERE done.problem_id = r.problem_id AND done.status = 'COMPLETED') AS latest_reviewed_at
+                FROM revision_tasks r JOIN problems p ON p.id = r.problem_id
+                WHERE r.status = 'SCHEDULED' AND r.scheduled_date BETWEEN ? AND ?
+                ORDER BY r.scheduled_date, r.id
+                LIMIT ?
+                """, (row, index) -> {
+            String latest = row.getString("latest_reviewed_at");
+            return new ScheduledReview(row.getLong("id"), row.getLong("problem_id"), row.getLong("leetcode_id"),
+                    row.getString("title"), Difficulty.valueOf(row.getString("difficulty")),
+                    LocalDate.parse(row.getString("scheduled_date")), latest == null ? null : Instant.parse(latest));
+        }, start.toString(), end.toString(), limit);
+    }
+
+    Optional<Long> firstScheduledId(long problemId) {
+        return jdbc.query("""
+                SELECT id FROM revision_tasks
+                WHERE problem_id = ? AND status = 'SCHEDULED'
+                ORDER BY scheduled_date, id LIMIT 1
+                """, (row, index) -> row.getLong("id"), problemId).stream().findFirst();
+    }
+
     Counts counts(LocalDate today) {
         return jdbc.queryForObject("""
                 SELECT count(CASE WHEN scheduled_date = ? THEN 1 END),
@@ -76,9 +104,9 @@ class RevisionRepository {
                 date.toString(), now, id);
     }
 
-    void close(long id, Status status, String now) {
+    void close(long id, Status status, String now, String completedAt) {
         jdbc.update("UPDATE revision_tasks SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?",
-                status.name(), status == Status.COMPLETED ? now : null, now, id);
+                status.name(), status == Status.COMPLETED ? completedAt : null, now, id);
     }
 
     void cancelForProblem(long problemId, String now) {

@@ -6,7 +6,7 @@
 
 [Editable Mermaid source](diagrams/architecture-flow.mmd)
 
-The dashboard reads current problem and progress records, goal results, the day's planner entries, and due reviews. Goal calculations use solved dates and topic membership. The optional [local MCP adapter](MCP_INTEGRATION.md) exposes a diagnostic tool and read-only catalog and reporting tools through the shared application services.
+The dashboard reads current problem and progress records, goal results, the day's planner entries, and due reviews. Goal calculations use solved dates and topic membership. The optional [local MCP adapter](MCP_INTEGRATION.md) exposes a diagnostic tool and read-only catalog, reporting, planner, goal, and revision tools through the shared application services. Progress, planner, goal, and revision write tools require a separate opt-in and reuse the same application transactions as REST.
 
 ## Runtime and stack
 
@@ -26,7 +26,7 @@ Validate individual fields at the application boundary and enforce domain rules 
 
 - **Problem** stores an internal ID, unique LeetCode ID, title, link, and difficulty. A **Topic** stores a display name and a case-insensitive unique name. A junction table maps problems to topics.
 - **Progress** uses the problem ID as its primary key. It stores status, attempted date, solved date, and comments. Create exactly one row with each problem.
-- **Goal** stores a type, inclusive period start and end, target count, and a topic reference for topic goals. Validate period boundaries according to goal type.
+- **Goal** stores a type, inclusive period start and end, target count, and optional topic and difficulty restrictions. Validate period boundaries according to goal type.
 - **Planner entry** references a problem and stores its scheduled date. The problem and date pair is unique.
 - **Revision schedule** uses the problem ID as its primary key and stores the next due date, the optional latest reviewed date, and whether the schedule still follows the original solved date. This lets date corrections update the initial schedule while preserving manual and reviewed schedules.
 

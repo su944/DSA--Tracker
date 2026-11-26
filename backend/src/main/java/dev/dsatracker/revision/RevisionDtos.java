@@ -1,5 +1,6 @@
 package dev.dsatracker.revision;
 
+import dev.dsatracker.catalog.Difficulty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import java.time.Instant;
@@ -16,6 +17,8 @@ public final class RevisionDtos {
     public record Reschedule(@NotNull LocalDate date) {}
     public record Task(long id, long problemId, long leetcodeId, String title, LocalDate scheduledDate,
                        Instant completedAt, Status status, Instant createdAt, Instant updatedAt) {}
+    public record ScheduledReview(long revisionId, long problemId, long leetcodeId, String title,
+                                  Difficulty difficulty, LocalDate scheduledDate, Instant latestReviewedAt) {}
     public record Counts(long dueToday, long overdue, long upcoming) {}
     public record Queue(LocalDate today, Counts counts, List<Task> items) {}
 }

@@ -10,6 +10,7 @@ services:
       TRACKER_BACKUP_ROOT: /backups
       TRACKER_TIME_ZONE: ${TRACKER_TIME_ZONE:-}
       TRACKER_MCP_ENABLED: ${TRACKER_MCP_ENABLED:-false}
+      TRACKER_MCP_WRITES_ENABLED: ${TRACKER_MCP_WRITES_ENABLED:-false}
     ports:
       - "127.0.0.1:8080:8081"
     volumes:
