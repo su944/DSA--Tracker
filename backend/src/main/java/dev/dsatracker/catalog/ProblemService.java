@@ -37,6 +37,46 @@ public class ProblemService {
     }
 
     @Transactional(readOnly = true)
+    public ProblemPage searchCatalog(String query, Long leetcodeId, List<String> topicNames, Difficulty difficulty,
+                                     ProgressStatus status, int page, int size) {
+        if (leetcodeId != null && leetcodeId <= 0) {
+            throw ApiException.invalid("leetcodeId", "LeetCode ID must be positive.");
+        }
+        if (query != null && query.length() > 255) {
+            throw ApiException.invalid("query", "Search must be at most 255 characters.");
+        }
+
+        List<Long> topicIds = List.of();
+        boolean filterByTopics = topicNames != null && !topicNames.isEmpty();
+        if (filterByTopics) {
+            if (topicNames.size() > 100 || topicNames.stream()
+                    .anyMatch(name -> name == null || name.isBlank() || name.strip().length() > 80)) {
+                throw ApiException.invalid("topicNames", "Provide up to 100 nonblank topic names of at most 80 characters.");
+            }
+            var nameKeys = topicNames.stream().map(Topic::comparisonKey).distinct().toList();
+            topicIds = topics.findIdsByNameKeys(nameKeys);
+        }
+
+        var filters = new ProblemQuery(query == null ? "" : query, topicIds, difficulty, status,
+                page, size, "leetcodeId,asc", leetcodeId);
+        if (filterByTopics && topicIds.isEmpty()) {
+            filters.pageRequest();
+            return new ProblemPage(List.of(), page, size, 0, 0);
+        }
+        return list(filters);
+    }
+
+    @Transactional(readOnly = true)
+    public ProblemView getByLeetcodeId(long leetcodeId) {
+        if (leetcodeId <= 0) {
+            throw ApiException.invalid("leetcodeId", "LeetCode ID must be positive.");
+        }
+        long id = problems.findIdByLeetcodeId(leetcodeId)
+                .orElseThrow(() -> ApiException.missing("No problem found with LeetCode ID " + leetcodeId + "."));
+        return get(id);
+    }
+
+    @Transactional(readOnly = true)
     ProblemView get(long id) {
         return ProblemView.from(requireProblem(id));
     }

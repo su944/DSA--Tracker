@@ -7,6 +7,11 @@ import org.springframework.data.jpa.repository.Query;
 
 public interface TopicRepository extends JpaRepository<Topic, Long> {
     List<Topic> findAllByOrderByNameKeyAsc();
+    List<Topic> findAllByNameKeyContainingOrderByNameKeyAsc(String nameKey);
+
+    @Query("select t.id from Topic t where t.nameKey in :nameKeys")
+    List<Long> findIdsByNameKeys(List<String> nameKeys);
+
     boolean existsByNameKey(String nameKey);
     Optional<Topic> findByNameKey(String nameKey);
     boolean existsByNameKeyAndIdNot(String nameKey, long id);

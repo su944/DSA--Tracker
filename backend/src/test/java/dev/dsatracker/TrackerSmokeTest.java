@@ -44,6 +44,12 @@ class TrackerSmokeTest {
     }
 
     @Test
+    void mcpIsDisabledByDefault() throws Exception {
+        mvc.perform(post("/mcp").contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void allowsLocalDevelopmentOrigin() throws Exception {
         mvc.perform(options("/api/health")
                         .header("Origin", "http://localhost:5173")

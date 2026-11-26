@@ -26,6 +26,18 @@ public class TopicService {
     }
 
     @Transactional(readOnly = true)
+    public List<TopicView> search(String query) {
+        if (query == null || query.isBlank()) {
+            return list();
+        }
+        if (query.strip().length() > 80) {
+            throw ApiException.invalid("query", "Topic search must be at most 80 characters.");
+        }
+        return topics.findAllByNameKeyContainingOrderByNameKeyAsc(Topic.comparisonKey(query))
+                .stream().map(TopicView::from).toList();
+    }
+
+    @Transactional(readOnly = true)
     TopicView get(long id) {
         return TopicView.from(requireTopic(id));
     }

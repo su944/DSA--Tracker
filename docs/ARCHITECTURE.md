@@ -6,7 +6,7 @@
 
 [Editable Mermaid source](diagrams/architecture-flow.mmd)
 
-The dashboard reads current problem and progress records, goal results, the day's planner entries, and due reviews. Goal calculations use solved dates and topic membership. A future MCP adapter can call the same application services.
+The dashboard reads current problem and progress records, goal results, the day's planner entries, and due reviews. Goal calculations use solved dates and topic membership. The optional [local MCP adapter](MCP_INTEGRATION.md) exposes a diagnostic tool and read-only catalog tools through the shared application services.
 
 ## Runtime and stack
 

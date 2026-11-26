@@ -11,7 +11,12 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 
 record ProblemQuery(String search, List<Long> topics, Difficulty difficulty, ProgressStatus status,
-                    int page, int size, String sort) {
+                    int page, int size, String sort, Long exactLeetcodeId) {
+    ProblemQuery(String search, List<Long> topics, Difficulty difficulty, ProgressStatus status,
+                 int page, int size, String sort) {
+        this(search, topics, difficulty, status, page, size, sort, null);
+    }
+
     private static final Set<String> SORT_FIELDS = Set.of("id", "leetcodeId", "title", "createdAt", "updatedAt");
 
     PageRequest pageRequest() {
@@ -55,6 +60,9 @@ record ProblemQuery(String search, List<Long> topics, Difficulty difficulty, Pro
                 var tagged = matches.correlate(problem).join("topics");
                 matches.select(tagged.get("id")).where(tagged.get("id").in(topics));
                 filters.add(criteria.exists(matches));
+            }
+            if (exactLeetcodeId != null) {
+                filters.add(criteria.equal(problem.get("leetcodeId"), exactLeetcodeId));
             }
             if (difficulty != null) {
                 filters.add(criteria.equal(problem.get("difficulty"), difficulty));
