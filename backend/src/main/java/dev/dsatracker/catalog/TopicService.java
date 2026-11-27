@@ -6,6 +6,7 @@ import java.time.Clock;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import org.springframework.stereotype.Service;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -38,6 +39,16 @@ public class TopicService {
     }
 
     @Transactional(readOnly = true)
+    public List<TopicView> search(String query, int limit) {
+        if (query != null && query.strip().length() > 80) {
+            throw ApiException.invalid("query", "Topic search must be at most 80 characters.");
+        }
+        String name = query == null ? "" : Topic.comparisonKey(query);
+        return topics.findAllByNameKeyContainingOrderByNameKeyAsc(name, PageRequest.of(0, limit))
+                .stream().map(TopicView::from).toList();
+    }
+
+    @Transactional(readOnly = true)
     TopicView get(long id) {
         return TopicView.from(requireTopic(id));
     }
@@ -49,6 +60,16 @@ public class TopicService {
             throw duplicateName();
         }
         return TopicView.from(topics.save(topic));
+    }
+
+    @Transactional(readOnly = true)
+    public List<Long> findIdsByNames(List<String> names) {
+        if (names == null || names.isEmpty()) return List.of();
+        if (names.size() > 100 || names.stream()
+                .anyMatch(name -> name == null || name.isBlank() || name.strip().length() > 80)) {
+            throw ApiException.invalid("topicNames", "Provide up to 100 nonblank topic names of at most 80 characters.");
+        }
+        return topics.findIdsByNameKeys(names.stream().map(Topic::comparisonKey).distinct().toList());
     }
 
     @Transactional(readOnly = true)

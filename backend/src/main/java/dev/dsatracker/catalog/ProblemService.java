@@ -12,6 +12,7 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,12 +20,15 @@ import org.springframework.transaction.annotation.Transactional;
 public class ProblemService {
     private final ProblemRepository problems;
     private final TopicRepository topics;
+    private final TopicService topicService;
     private final Clock clock;
     private final RevisionService revisions;
 
-    ProblemService(ProblemRepository problems, TopicRepository topics, Clock clock, RevisionService revisions) {
+    ProblemService(ProblemRepository problems, TopicRepository topics, TopicService topicService,
+                   Clock clock, RevisionService revisions) {
         this.problems = problems;
         this.topics = topics;
+        this.topicService = topicService;
         this.clock = clock;
         this.revisions = revisions;
     }
@@ -46,16 +50,8 @@ public class ProblemService {
             throw ApiException.invalid("query", "Search must be at most 255 characters.");
         }
 
-        List<Long> topicIds = List.of();
         boolean filterByTopics = topicNames != null && !topicNames.isEmpty();
-        if (filterByTopics) {
-            if (topicNames.size() > 100 || topicNames.stream()
-                    .anyMatch(name -> name == null || name.isBlank() || name.strip().length() > 80)) {
-                throw ApiException.invalid("topicNames", "Provide up to 100 nonblank topic names of at most 80 characters.");
-            }
-            var nameKeys = topicNames.stream().map(Topic::comparisonKey).distinct().toList();
-            topicIds = topics.findIdsByNameKeys(nameKeys);
-        }
+        List<Long> topicIds = topicService.findIdsByNames(topicNames);
 
         var filters = new ProblemQuery(query == null ? "" : query, topicIds, difficulty, status,
                 page, size, "leetcodeId,asc", leetcodeId);
@@ -88,6 +84,25 @@ public class ProblemService {
     @Transactional(readOnly = true)
     ProblemView get(long id) {
         return ProblemView.from(requireProblem(id));
+    }
+
+    @Transactional
+    public boolean importIfMissing(long leetcodeId, String title, String url, Difficulty difficulty,
+                                   List<String> topicNames) {
+        if (problems.existsByLeetcodeId(leetcodeId)) {
+            return false;
+        }
+        if (topicNames.isEmpty() || topicNames.size() > 100) {
+            throw ApiException.invalid("topics", "Import requires between 1 and 100 topics.");
+        }
+        var topicIds = topicNames.stream().map(topicService::resolveId).toList();
+        create(new ProblemInput(leetcodeId, title, url, difficulty, topicIds));
+        return true;
+    }
+
+    @Transactional(readOnly = true)
+    public boolean containsLeetcodeId(long leetcodeId) {
+        return problems.existsByLeetcodeId(leetcodeId);
     }
 
     @Transactional
@@ -131,6 +146,30 @@ public class ProblemService {
 
     public void validateImportedProgress(ProgressPatch patch) {
         resolveProgress(patch, ProgressStatus.NOT_STARTED, null, null);
+    }
+
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Slice<QueryProblem> query(
+            dev.dsatracker.query.TrackerQueryRequest.Problems filters, int page, int limit) {
+        var topics = topicService.findIdsByNames(filters.topicNames());
+        var base = new ProblemQuery("", topics, filters.difficulty(), null, page, limit,
+                (filters.sortBy() == null ? "leetcodeId" : filters.sortBy().property()) + ","
+                        + (filters.sortDirection() == dev.dsatracker.query.TrackerQueryRequest.Direction.DESC ? "desc" : "asc"),
+                filters.leetcodeId());
+        var pageable = base.pageRequest();
+        if (filters.topicNames() != null && topics.isEmpty()) {
+            return new org.springframework.data.domain.SliceImpl<>(List.of(), pageable, false);
+        }
+        var spec = base.specification().and(ProblemQuery.trackerFilters(filters));
+        return problems.findBy(spec, query -> query.slice(pageable))
+                .map(problem -> new QueryProblem(problem.leetcodeId, problem.title, problem.difficulty, problem.progress.status));
+    }
+
+    public record QueryProblem(long leetcodeId, String title, Difficulty difficulty, ProgressStatus status) {}
+
+    @Transactional(readOnly = true)
+    public Set<Long> existingLeetcodeIds() {
+        return Set.copyOf(problems.leetcodeIds());
     }
 
     @Transactional(readOnly = true)

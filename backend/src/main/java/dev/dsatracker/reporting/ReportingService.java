@@ -50,6 +50,30 @@ public class ReportingService {
         return reports.topics(ReportingPeriod.parse(range, clock));
     }
 
+    public List<TopicStats> topics(String range, int limit) {
+        return topics(range, limit, 0);
+    }
+
+    public List<TopicStats> topics(String range, int limit, int offset) {
+        return reports.topics(ReportingPeriod.parse(range, clock), limit, offset);
+    }
+
+    @Transactional(readOnly = true)
+    public ActivityWindow activityWindow(String range) {
+        var period = ReportingPeriod.parse(range, clock);
+        if (!period.allTime()) {
+            var data = activity(range);
+            return new ActivityWindow(data, data.days().stream().mapToLong(ActivityDay::solved).sum(), false);
+        }
+        var latest = reports.activity(period, 366);
+        boolean truncated = latest.size() > 365;
+        var days = latest.stream().limit(365).toList().reversed();
+        long total = truncated ? reports.datedSolves(period) : days.stream().mapToLong(ActivityDay::solved).sum();
+        return new ActivityWindow(new Activity(null, period.today(), days), total, truncated);
+    }
+
+    public record ActivityWindow(Activity activity, long total, boolean truncated) {}
+
     public List<DifficultyStats> difficulty(String range) {
         return reports.difficulty(ReportingPeriod.parse(range, clock));
     }

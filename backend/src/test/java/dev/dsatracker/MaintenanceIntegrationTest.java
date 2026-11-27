@@ -284,7 +284,7 @@ class MaintenanceIntegrationTest {
                     VALUES (7, 'Existing goal', 'DAILY', '2026-11-20', '2026-11-20', 4)
                     """);
         }
-        var current = Flyway.configure().dataSource(url, "", "").load();
+        var current = Flyway.configure().dataSource(url, "", "").target("5").load();
         assertThat(current.migrate().migrationsExecuted).isEqualTo(1);
         assertThat(current.info().current().getVersion().getVersion()).isEqualTo("5");
         current.validate();
@@ -294,6 +294,33 @@ class MaintenanceIntegrationTest {
             assertThat(goal.getString("name")).isEqualTo("Existing goal");
             assertThat(goal.getInt("target_count")).isEqualTo(4);
             assertThat(goal.getString("difficulty")).isNull();
+        }
+    }
+
+    @Test
+    void appliesV6WithoutChangingExistingPlannerEntries() throws Exception {
+        String url = "jdbc:sqlite:" + temporaryDirectory.resolve("upgrade-v5.sqlite");
+        Flyway.configure().dataSource(url, "", "").target("5").load().migrate();
+        try (var connection = DriverManager.getConnection(url); var sql = connection.createStatement()) {
+            sql.executeUpdate("""
+                    INSERT INTO problems(id,leetcode_id,title,slug,url,difficulty,created_at,updated_at)
+                    VALUES (1,1,'Fixture','fixture','https://leetcode.com/problems/fixture/','EASY',
+                            '2026-11-20T00:00:00Z','2026-11-20T00:00:00Z')
+                    """);
+            sql.executeUpdate("INSERT INTO plan_items(id,problem_id,planned_date) VALUES (8,1,'2026-11-20')");
+        }
+        var latest = Flyway.configure().dataSource(url, "", "").load();
+        assertThat(latest.migrate().migrationsExecuted).isEqualTo(1);
+        latest.validate();
+        try (var connection = DriverManager.getConnection(url); var sql = connection.createStatement()) {
+            try (var rows = sql.executeQuery("SELECT problem_id, planned_date FROM plan_items WHERE id=8")) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getLong("problem_id")).isEqualTo(1);
+                assertThat(rows.getString("planned_date")).isEqualTo("2026-11-20");
+            }
+            try (var rows = sql.executeQuery("SELECT count(*) FROM study_plan_executions")) {
+                assertThat(rows.getInt(1)).isZero();
+            }
         }
     }
 

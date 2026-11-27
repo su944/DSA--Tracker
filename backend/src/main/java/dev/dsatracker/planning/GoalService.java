@@ -8,6 +8,7 @@ import dev.dsatracker.planning.GoalDtos.GoalView;
 import java.time.LocalDate;
 import java.util.List;
 import org.springframework.stereotype.Service;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -28,6 +29,26 @@ public class GoalService {
     @Transactional(readOnly = true)
     public List<GoalView> activeOn(LocalDate date) {
         return goals.activeWithProgress(date).stream().map(GoalView::from).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<GoalView> listBounded(LocalDate activeDate, int limit) {
+        var page = PageRequest.of(0, limit);
+        var rows = activeDate == null ? goals.listWithProgress(page) : goals.activeWithProgress(activeDate, page);
+        return rows.stream().map(GoalView::from).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Slice<GoalView> query(dev.dsatracker.query.TrackerQueryRequest.Goals filter,
+                                                                 int page, int limit) {
+        var pageable = PageRequest.of(page, limit);
+        var ids = topics.findIdsByNameKeys(filter.topicName() == null ? List.of("") :
+                List.of(dev.dsatracker.catalog.Topic.comparisonKey(filter.topicName())));
+        if (filter.topicName() != null && ids.isEmpty()) {
+            return new org.springframework.data.domain.SliceImpl<>(List.of(), pageable, false);
+        }
+        return goals.query(filter.activeOn(), filter.type(), ids.isEmpty() ? null : ids.getFirst(), filter.difficulty(),
+                filter.completed(), filter.startDateFrom(), filter.startDateTo(), pageable).map(GoalView::from);
     }
 
     @Transactional(readOnly = true)

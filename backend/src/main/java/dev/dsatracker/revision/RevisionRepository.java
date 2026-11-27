@@ -64,6 +64,19 @@ class RevisionRepository {
         }, start.toString(), end.toString(), limit);
     }
 
+    List<Task> query(LocalDate start, LocalDate end, LocalDate dueBefore, Status status, int offset, int limit) {
+        String statusName = status == null ? null : status.name();
+        String lower = start == null ? null : start.toString();
+        String upper = end == null ? null : end.toString();
+        String due = dueBefore == null ? null : dueBefore.toString();
+        return jdbc.query(TASKS + """
+                WHERE (? IS NULL OR r.scheduled_date >= ?) AND (? IS NULL OR r.scheduled_date <= ?)
+                AND (? IS NULL OR (r.status = 'SCHEDULED' AND r.scheduled_date < ?))
+                AND (? IS NULL OR r.status = ?)
+                ORDER BY r.scheduled_date, r.id LIMIT ? OFFSET ?
+                """, RevisionRepository::task, lower, lower, upper, upper, due, due, statusName, statusName, limit, offset);
+    }
+
     Optional<Long> firstScheduledId(long problemId) {
         return jdbc.query("""
                 SELECT id FROM revision_tasks

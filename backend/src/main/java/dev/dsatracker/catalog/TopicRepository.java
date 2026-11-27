@@ -1,6 +1,7 @@
 package dev.dsatracker.catalog;
 
 import java.util.List;
+import org.springframework.data.domain.Pageable;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -11,6 +12,8 @@ public interface TopicRepository extends JpaRepository<Topic, Long> {
 
     @Query("select t.id from Topic t where t.nameKey in :nameKeys")
     List<Long> findIdsByNameKeys(List<String> nameKeys);
+
+    List<Topic> findAllByNameKeyContainingOrderByNameKeyAsc(String nameKey, Pageable page);
 
     boolean existsByNameKey(String nameKey);
     Optional<Topic> findByNameKey(String nameKey);

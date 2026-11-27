@@ -2,6 +2,11 @@ package dev.dsatracker.catalog;
 
 import dev.dsatracker.api.ApiException;
 import jakarta.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.Path;
+import dev.dsatracker.planning.PlanItem;
+import dev.dsatracker.query.TrackerQueryRequest.Problems;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -72,6 +77,39 @@ record ProblemQuery(String search, List<Long> topics, Difficulty difficulty, Pro
             }
             return criteria.and(filters);
         };
+    }
+
+    static Specification<Problem> trackerFilters(Problems filters) {
+        return (problem, query, criteria) -> {
+            var conditions = new ArrayList<Predicate>();
+            if (filters.title() != null) {
+                String text = filters.title().strip().toLowerCase(Locale.ROOT)
+                        .replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+                conditions.add(criteria.like(criteria.lower(problem.get("title")), "%" + text + "%", '\\'));
+            }
+            var progress = problem.get("progress");
+            if (filters.statuses() != null) conditions.add(progress.get("status").in(filters.statuses()));
+            dates(conditions, criteria, progress.get("attemptedDate"), filters.attemptedFrom(), filters.attemptedTo());
+            dates(conditions, criteria, progress.get("solvedDate"), filters.solvedFrom(), filters.solvedTo());
+            boolean exclude = Boolean.TRUE.equals(filters.excludeScheduled());
+            if (exclude || filters.scheduledFrom() != null || filters.scheduledTo() != null) {
+                var sub = query.subquery(Long.class);
+                var item = sub.from(PlanItem.class);
+                var scheduled = new ArrayList<Predicate>();
+                scheduled.add(criteria.equal(item.get("problem").get("id"), problem.get("id")));
+                dates(scheduled, criteria, item.get("date"), filters.scheduledFrom(), filters.scheduledTo());
+                sub.select(item.get("id")).where(scheduled.toArray(Predicate[]::new));
+                var exists = criteria.exists(sub);
+                conditions.add(exclude ? criteria.not(exists) : exists);
+            }
+            return criteria.and(conditions);
+        };
+    }
+
+    private static void dates(List<Predicate> conditions, CriteriaBuilder criteria, Path<LocalDate> path,
+                              LocalDate from, LocalDate to) {
+        if (from != null) conditions.add(criteria.greaterThanOrEqualTo(path, from));
+        if (to != null) conditions.add(criteria.lessThanOrEqualTo(path, to));
     }
 
     private static Long tryId(String text) {

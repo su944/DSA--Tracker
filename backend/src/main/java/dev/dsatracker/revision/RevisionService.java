@@ -19,7 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class RevisionService {
-    private static final int INTERVAL_DAYS = 7;
+    public static final int INTERVAL_DAYS = 7;
     private final RevisionRepository revisions;
     private final ProblemRepository problems;
     private final Clock clock;
@@ -45,6 +45,11 @@ public class RevisionService {
             throw ApiException.invalid("limit", "Revision limit must be from 1 to 100.");
         }
         return revisions.scheduledBetween(start, end, limit);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Task> query(dev.dsatracker.query.TrackerQueryRequest.Revisions filter, int offset, int limit) {
+        return revisions.query(filter.startDate(), filter.endDate(), filter.dueBefore(), filter.status(), offset, limit);
     }
 
     public Counts counts(LocalDate date) {

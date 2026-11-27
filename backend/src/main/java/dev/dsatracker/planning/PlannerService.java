@@ -49,6 +49,13 @@ public class PlannerService {
     }
 
     @Transactional(readOnly = true)
+    public org.springframework.data.domain.Slice<Task> query(dev.dsatracker.query.TrackerQueryRequest.Planner filter,
+                                                             int page, int limit) {
+        return items.query(filter.startDate(), filter.endDate(), filter.state() == null ? null : filter.state().name(),
+                filter.difficulty(), org.springframework.data.domain.PageRequest.of(page, limit)).map(PlannerService::viewOf);
+    }
+
+    @Transactional(readOnly = true)
     Task get(long id) {
         return viewOf(requireItem(id));
     }
@@ -127,6 +134,13 @@ public class PlannerService {
         if (task.state() == TaskState.COMPLETED) {
             throw ApiException.conflict("id", "Completed tasks cannot be moved or skipped.");
         }
+    }
+
+    void validateProposalDate(long problemId, LocalDate date, boolean excludeScheduled) {
+        if (excludeScheduled && items.existsByProblemId(problemId)) {
+            throw ApiException.conflict("proposalId", "A proposed problem already has a planner assignment.");
+        }
+        requireAvailableDate(problemId, date);
     }
 
     private void requireAvailableDate(long problemId, LocalDate date) {

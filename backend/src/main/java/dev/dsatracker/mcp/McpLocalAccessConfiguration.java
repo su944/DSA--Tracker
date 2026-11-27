@@ -1,6 +1,9 @@
 package dev.dsatracker.mcp;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.servlet.Filter;
+import org.springframework.ai.util.JacksonUtils;
+import tools.jackson.databind.json.JsonMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.net.InetAddress;
@@ -14,6 +17,14 @@ import org.springframework.web.cors.CorsUtils;
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(name = "spring.ai.mcp.server.enabled", havingValue = "true")
 class McpLocalAccessConfiguration {
+
+    @Bean(name = "mcpServerJsonMapper", defaultCandidate = false)
+    JsonMapper mcpServerJsonMapper() {
+        // The starter's NON_NULL map content setting drops null arguments during SDK conversion.
+        return JacksonUtils.getDefaultJsonMapper().rebuild()
+                .changeDefaultPropertyInclusion(inclusion -> inclusion.withContentInclusion(JsonInclude.Include.ALWAYS))
+                .build();
+    }
 
     @Bean
     FilterRegistrationBean<Filter> mcpLocalAccessFilter(

@@ -38,6 +38,7 @@ import tools.jackson.databind.json.JsonMapper;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {"spring.ai.mcp.server.enabled=true", "tracker.mcp-writes-enabled=true"})
 class TrackerMcpWriteIntegrationTest {
+    private static final String APPROVAL_TOKEN = "df".repeat(32);
     private static final JsonMapper JSON = new JsonMapper();
 
     @TempDir static Path temporaryDirectory;
@@ -55,6 +56,7 @@ class TrackerMcpWriteIntegrationTest {
 
     @DynamicPropertySource
     static void configureStorage(DynamicPropertyRegistry properties) {
+        properties.add("tracker.study-plan-approval-token", () -> APPROVAL_TOKEN);
         properties.add("tracker.database-path", () -> temporaryDirectory.resolve("writes.sqlite").toString());
         properties.add("tracker.backup-root", () -> temporaryDirectory.resolve("backups").toString());
     }
@@ -79,14 +81,14 @@ class TrackerMcpWriteIntegrationTest {
     void advertisesWritesWithAccurateHintsAndRetainsReadTools() {
         try (var client = connect()) {
             var names = Set.of("update_problem_progress", "schedule_problem", "reschedule_problem",
-                    "create_goal", "update_goal", "complete_revision");
+                    "create_goal", "update_goal", "complete_revision", "import_leetcode_problems");
             var tools = client.listTools().tools();
-            assertThat(tools).hasSize(21);
+            assertThat(tools).hasSize(27);
             var writes = tools.stream().filter(tool -> names.contains(tool.name())).toList();
-            assertThat(writes).hasSize(6).allSatisfy(tool -> {
+            assertThat(writes).hasSize(7).allSatisfy(tool -> {
                 assertThat(tool.annotations().readOnlyHint()).isFalse();
-                assertThat(tool.annotations().destructiveHint()).isEqualTo(!Set.of("schedule_problem", "create_goal").contains(tool.name()));
-                assertThat(tool.annotations().idempotentHint()).isEqualTo(Set.of("reschedule_problem", "update_goal").contains(tool.name()));
+                assertThat(tool.annotations().destructiveHint()).isEqualTo(!Set.of("schedule_problem", "create_goal", "import_leetcode_problems").contains(tool.name()));
+                assertThat(tool.annotations().idempotentHint()).isEqualTo(Set.of("reschedule_problem", "update_goal", "import_leetcode_problems").contains(tool.name()));
                 assertThat(tool.outputSchema()).isNotEmpty();
             });
             for (var tool : List.of("ping_tracker", "get_problem", "get_dashboard_summary", "get_daily_plan")) {
@@ -359,13 +361,15 @@ class TrackerMcpWriteIntegrationTest {
         return client;
     }
 
-    private static JsonNode call(McpSyncClient client, String tool, Map<String, Object> args) {
+    private JsonNode call(McpSyncClient client, String tool, Map<String, Object> args) {
+        authorizePlannerAction(tool, args);
         var result = client.callTool(new CallToolRequest(tool, args));
         assertThat(result.isError()).as("%s: %s", tool, result.content()).isFalse();
         return JSON.valueToTree(result.structuredContent());
     }
 
-    private static void reject(McpSyncClient client, String tool, Map<String, Object> args, String message) {
+    private void reject(McpSyncClient client, String tool, Map<String, Object> args, String message) {
+        authorizePlannerAction(tool, args);
         var result = client.callTool(new CallToolRequest(tool, args));
         assertThat(result.isError()).as("%s: %s", tool, result.content()).isTrue();
         assertThat(result.content()).anySatisfy(content -> {
@@ -381,6 +385,61 @@ class TrackerMcpWriteIntegrationTest {
                 .method(method, HttpRequest.BodyPublishers.ofString(body)).build(), HttpResponse.BodyHandlers.ofString());
         assertThat(response.statusCode()).isEqualTo(status);
         return JSON.readTree(response.body());
+    }
+
+    @Test
+    void plannerWritesCannotSelfApproveAndGrantsAreExactAndSingleUse() throws Exception {
+        try (var client = connect()) {
+            var args = Map.<String, Object>of("leetcodeId", 862, "date", "2026-11-20");
+            assertThat(client.callTool(new CallToolRequest("schedule_problem", args)).isError()).isTrue();
+            authorizePlannerAction("schedule_problem", args);
+            assertThat(client.callTool(new CallToolRequest("schedule_problem",
+                    Map.of("leetcodeId", 862, "date", "2026-11-21"))).isError()).isTrue();
+            assertThat(client.callTool(new CallToolRequest("schedule_problem", args)).isError()).isFalse();
+            var replay = client.callTool(new CallToolRequest("schedule_problem", args));
+            assertThat(replay.isError()).isTrue();
+            assertThat(replay.content().toString()).contains("operator approval");
+        }
+    }
+
+    @Test
+    void storageFailuresDoNotExposeSqlOrDatabasePaths() {
+        jdbc.execute("""
+                CREATE TRIGGER fail_direct_schedule BEFORE INSERT ON plan_items
+                BEGIN SELECT RAISE(ABORT, 'Failure at /private/tmp/tracker.sqlite'); END
+                """);
+        try (var client = connect()) {
+            var args = Map.<String, Object>of("leetcodeId", 862, "date", "2026-11-20");
+            authorizePlannerAction("schedule_problem", args);
+            var result = client.callTool(new CallToolRequest("schedule_problem", args));
+            assertThat(result.isError()).isTrue();
+            assertThat(result.content().toString()).doesNotContain("INSERT", "tracker.sqlite", "/private/tmp")
+                    .contains("Check the tracker server logs");
+        } finally {
+            jdbc.execute("DROP TRIGGER fail_direct_schedule");
+        }
+    }
+
+    private void authorizePlannerAction(String tool, Map<String, Object> args) {
+        boolean schedule = "schedule_problem".equals(tool);
+        if (!schedule && !"reschedule_problem".equals(tool)) return;
+        String date = (String) args.get("date");
+        try {
+            java.time.LocalDate.parse(date);
+        } catch (java.time.DateTimeException ignored) {
+            return;
+        }
+        var id = args.get(schedule ? "leetcodeId" : "plannerEntryId");
+        var operation = schedule ? "SCHEDULE" : "RESCHEDULE";
+        try (var http = HttpClient.newHttpClient()) {
+            var request = HttpRequest.newBuilder(URI.create(baseUrl() + "/api/planner-write-approvals/"
+                            + operation + "/" + id + "/" + date))
+                    .header("Authorization", "Bearer " + APPROVAL_TOKEN)
+                    .POST(HttpRequest.BodyPublishers.noBody()).build();
+            assertThat(http.send(request, HttpResponse.BodyHandlers.ofString()).statusCode()).isEqualTo(200);
+        } catch (java.io.IOException | InterruptedException exception) {
+            throw new AssertionError(exception);
+        }
     }
 
     private String baseUrl() {

@@ -43,7 +43,8 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "spring.ai.mcp.server.enabled=true")
+        properties = {"spring.ai.mcp.server.enabled=true",
+                "tracker.study-plan-approval-token=0000000000000000000000000000000000000000000000000000000000000000"})
 class TrackerMcpIntegrationTest {
 
     private static final JsonMapper JSON = new JsonMapper();
@@ -82,7 +83,9 @@ class TrackerMcpIntegrationTest {
                     .containsExactlyInAnyOrder("ping_tracker", "search_problems", "get_problem", "list_topics",
                             "get_dashboard_summary", "get_topic_progress", "get_difficulty_progress",
                             "get_solving_activity", "get_recent_problems", "get_daily_plan", "get_weekly_plan",
-                            "list_goals", "get_goal_progress", "get_due_revisions", "get_upcoming_revisions");
+                            "list_goals", "get_goal_progress", "get_due_revisions", "get_upcoming_revisions",
+                            "search_leetcode_problems", "get_leetcode_problem", "preview_leetcode_import",
+                            "recommend_study_plan");
             assertThat(tools).allSatisfy(tool -> {
                 assertThat(tool.annotations().readOnlyHint()).isTrue();
                 assertThat(tool.outputSchema()).isNotEmpty();

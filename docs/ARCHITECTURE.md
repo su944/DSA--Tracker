@@ -12,6 +12,10 @@ The dashboard reads current problem and progress records, goal results, the day'
 
 Run a React and TypeScript frontend styled with Tailwind CSS against a local Java 21 Spring Boot backend built with Maven. The backend owns an on-disk SQLite database at a configurable path. Bind the backend to loopback by default. Serve the built frontend from Spring Boot for daily use and use a frontend development proxy for API requests during development. Bundle frontend assets locally so ordinary use needs no remote fonts, scripts, or APIs.
 
+LeetCode discovery is an on-demand MCP integration with a public GraphQL endpoint. It compares remote metadata with local problem IDs, and its preview snapshots expire in memory. Discovery leaves SQLite untouched and uses the network only to fetch metadata. The opt-in import tool can save selected candidates from an unexpired preview through the catalog service, without another network request.
+
+Study recommendations query the local catalog and planner and keep bounded, expiring proposals in memory. A separate authenticated operator endpoint records approval decisions. An approved proposal can be committed with its result in one SQLite transaction.
+
 The browser stores transient UI state such as pending edits and selected filters. SQLite is the authoritative store for application data. Resolve calendar dates in one configurable application time zone, defaulting to the system zone. Pass an injectable clock to services that need to determine today.
 
 ## Backend boundaries
@@ -38,3 +42,9 @@ Store date-only values as ISO `YYYY-MM-DD` text and represent them as `LocalDate
 - Use portable keys within a snapshot to resolve references. Use LeetCode IDs for problem references and preserve topic identities when rebuilding goal and problem associations. Preserve comments, including line breaks and quotes, through UTF-8 serialization and CSV quoting.
 - Parse and validate complete files before applying changes. Preview counts, conflicts, and errors such as duplicate keys, invalid progress dates, and missing references. Revalidate the submitted file when applying it. Replace all tracker data together in one transaction for a confirmed full restore.
 - Define the standalone catalog CSV separately from the full snapshot. Use a header row and a documented representation for multiple topics. Upsert catalog fields by LeetCode ID, initialize progress for new problems, and apply the import as a single transaction.
+
+## Local MCP adapter
+
+Spring Boot serves Streamable HTTP at `/mcp` when enabled. MCP tools, resources, and prompts adapt existing services and expose structured output. The endpoint stays loopback-only, including when reached through the Docker frontend on its loopback port. MCP write registrations require a separate opt-in. Batch planner commits require an operator-approved immutable snapshot and use one SQLite transaction. Direct MCP planner writes require a short-lived, single-use operator grant bound to the exact action. The operator approval credential stays outside the MCP registry.
+
+In the unified profile, `query_tracker` validates the domain and JSON fields against typed request records. The application query service delegates to catalog, planning, revision, and reporting services. Those services use JPA Specifications with database pagination, pageable JPQL, or bound SQLite queries as appropriate. They map records to compact MCP DTOs. The query path makes no network requests and has no write operations. Catalog and planning routes continue to share their existing domain rules with REST.

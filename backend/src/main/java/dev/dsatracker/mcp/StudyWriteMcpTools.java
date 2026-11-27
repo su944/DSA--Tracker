@@ -7,6 +7,8 @@ import dev.dsatracker.catalog.ProblemService;
 import dev.dsatracker.catalog.ProgressStatus;
 import dev.dsatracker.mcp.StudyPlanMcpTools.ScheduledProblem;
 import dev.dsatracker.planning.PlannerService;
+import dev.dsatracker.planning.PlannerWriteApproval;
+import dev.dsatracker.planning.PlannerWriteApproval.Operation;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
@@ -20,7 +22,6 @@ import java.util.Map;
 import org.springframework.ai.mcp.annotation.McpTool;
 import org.springframework.ai.mcp.annotation.McpToolParam;
 import org.springframework.ai.mcp.annotation.method.tool.utils.McpJsonSchemaGenerator;
-import org.springframework.ai.util.JacksonUtils;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -39,18 +40,12 @@ public class StudyWriteMcpTools {
 
     private final ProblemService problems;
     private final PlannerService planner;
+    private final PlannerWriteApproval approvals;
 
-    public StudyWriteMcpTools(ProblemService problems, PlannerService planner) {
+    public StudyWriteMcpTools(ProblemService problems, PlannerService planner, PlannerWriteApproval approvals) {
         this.problems = problems;
         this.planner = planner;
-    }
-
-    @Bean(name = "mcpServerJsonMapper", defaultCandidate = false)
-    JsonMapper mcpServerJsonMapper() {
-        // The starter's NON_NULL map content setting drops null arguments during SDK conversion.
-        return JacksonUtils.getDefaultJsonMapper().rebuild()
-                .changeDefaultPropertyInclusion(inclusion -> inclusion.withContentInclusion(JsonInclude.Include.ALWAYS))
-                .build();
+        this.approvals = approvals;
     }
 
     @Bean
@@ -116,7 +111,9 @@ public class StudyWriteMcpTools {
     public ScheduledProblem scheduleProblem(
             @McpToolParam(description = "Positive LeetCode ID.") long leetcodeId,
             @McpToolParam(description = "Scheduled date in YYYY-MM-DD format.") String date) {
-        return ScheduledProblem.from(planner.scheduleByLeetcodeId(leetcodeId, parseDate("date", date)));
+        var day = parseDate("date", date);
+        approvals.require(Operation.SCHEDULE, leetcodeId, day);
+        return ScheduledProblem.from(planner.scheduleByLeetcodeId(leetcodeId, day));
     }
 
     @McpTool(name = "reschedule_problem", description = "Move an existing planner entry. Obtain user approval first.",
@@ -125,7 +122,9 @@ public class StudyWriteMcpTools {
     public ScheduledProblem rescheduleProblem(
             @McpToolParam(description = "Positive internal planner entry ID.") long plannerEntryId,
             @McpToolParam(description = "New scheduled date in YYYY-MM-DD format.") String date) {
-        return ScheduledProblem.from(planner.reschedule(plannerEntryId, parseDate("date", date)));
+        var day = parseDate("date", date);
+        approvals.require(Operation.RESCHEDULE, plannerEntryId, day);
+        return ScheduledProblem.from(planner.reschedule(plannerEntryId, day));
     }
 
     private static LocalDate patchDate(String field, String date) {

@@ -50,6 +50,10 @@ class ReportingRepository {
     }
 
     List<TopicStats> topics(ReportingPeriod period) {
+        return topics(period, -1, 0);
+    }
+
+    List<TopicStats> topics(ReportingPeriod period, int limit, int offset) {
         // Each topic/problem pair is unique, even when a problem belongs to several topics.
         String sql = """
                 SELECT t.id, t.name, COUNT(pt.problem_id) AS total,
@@ -60,8 +64,9 @@ class ReportingRepository {
                 LEFT JOIN problem_progress r ON r.problem_id = pt.problem_id
                 GROUP BY t.id, t.name, t.name_key
                 ORDER BY t.name_key, t.id
+                LIMIT :limit OFFSET :offset
                 """.formatted(DATED_SOLVE);
-        return jdbc.query(sql, dates(period).addValue("allTime", period.allTime() ? 1 : 0), (row, index) ->
+        return jdbc.query(sql, dates(period).addValue("allTime", period.allTime() ? 1 : 0).addValue("limit", limit).addValue("offset", offset), (row, index) ->
                 new TopicStats(row.getLong("id"), row.getString("name"), row.getLong("total"),
                         row.getLong("solved"), row.getLong("remaining")));
     }
@@ -81,15 +86,25 @@ class ReportingRepository {
     }
 
     List<ActivityDay> activity(ReportingPeriod period) {
+        return activity(period, -1);
+    }
+
+    List<ActivityDay> activity(ReportingPeriod period, int limit) {
         String sql = """
                 SELECT r.solved_date, COUNT(*) AS solved
                 FROM problem_progress r
                 WHERE r.status = 'SOLVED' AND %s
                 GROUP BY r.solved_date
-                ORDER BY r.solved_date
-                """.formatted(DATED_SOLVE);
-        return jdbc.query(sql, dates(period), (row, index) ->
+                ORDER BY r.solved_date %s
+                LIMIT :limit
+                """.formatted(DATED_SOLVE, limit < 0 ? "ASC" : "DESC");
+        return jdbc.query(sql, dates(period).addValue("limit", limit), (row, index) ->
                 new ActivityDay(LocalDate.parse(row.getString("solved_date")), row.getLong("solved")));
+    }
+
+    long datedSolves(ReportingPeriod period) {
+        return jdbc.queryForObject("SELECT count(*) FROM problem_progress r WHERE r.status = 'SOLVED' AND "
+                + DATED_SOLVE, dates(period), Long.class);
     }
 
     List<RecentProblem> recentlySolved(ReportingPeriod period, int limit) {

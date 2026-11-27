@@ -43,7 +43,7 @@ public class StudyPlanMcpTools {
                     readOnlyHint = true, destructiveHint = false, idempotentHint = true, openWorldHint = false))
     public DailyPlan getDailyPlan(
             @McpToolParam(required = false, description = "ISO date YYYY-MM-DD. Defaults to tracker today.") String date) {
-        return DailyPlan.from(planner.calendar(dateOrToday("date", date), View.DAY).days().getFirst());
+        return DailyPlan.from(planner.calendar(dateOrToday("date", date), View.DAY).days().getFirst(), 100);
     }
 
     @McpTool(name = "get_weekly_plan", description = "Get the Monday–Sunday study plan grouped by date.",
@@ -54,8 +54,15 @@ public class StudyPlanMcpTools {
             String date) {
         var week = planner.calendar(dateOrToday("date", date), View.WEEK);
         var counts = week.counts();
+        var days = new java.util.ArrayList<DailyPlan>();
+        int remaining = 100;
+        for (var day : week.days()) {
+            var bounded = DailyPlan.from(day, remaining);
+            remaining -= bounded.scheduledProblems().size();
+            days.add(bounded);
+        }
         return new WeeklyPlan(week.startDate(), week.endDate(), counts.planned(), counts.completed(), counts.skipped(),
-                week.days().stream().map(DailyPlan::from).toList());
+                List.copyOf(days), counts.planned() > 100);
     }
 
     @McpTool(name = "list_goals", description = "List study goals with current progress and optional active filtering.",
@@ -64,8 +71,8 @@ public class StudyPlanMcpTools {
     public GoalList listGoals(
             @McpToolParam(required = false, description = "Only include goals whose period includes tracker today. Default: false.")
             Boolean activeOnly) {
-        var selected = Boolean.TRUE.equals(activeOnly) ? goals.activeOn(LocalDate.now(clock)) : goals.list();
-        return new GoalList(selected.stream().map(GoalSummary::from).toList());
+        var selected = goals.listBounded(Boolean.TRUE.equals(activeOnly) ? LocalDate.now(clock) : null, 51);
+        return new GoalList(selected.stream().limit(50).map(GoalSummary::from).toList(), selected.size() > 50);
     }
 
     @McpTool(name = "get_goal_progress", description = "Get the current progress and period of one study goal.",
@@ -143,11 +150,11 @@ public class StudyPlanMcpTools {
     }
 
     public record DailyPlan(LocalDate date, int totalScheduled, long completedCount, long skippedCount,
-                            List<ScheduledProblem> scheduledProblems) {
-        static DailyPlan from(Day day) {
+                            List<ScheduledProblem> scheduledProblems, boolean truncated) {
+        static DailyPlan from(Day day, int limit) {
             var counts = day.counts();
             return new DailyPlan(day.date(), counts.planned(), counts.completed(), counts.skipped(),
-                    day.items().stream().map(ScheduledProblem::from).toList());
+                    day.items().stream().limit(limit).map(ScheduledProblem::from).toList(), day.items().size() > limit);
         }
     }
 
@@ -163,9 +170,9 @@ public class StudyPlanMcpTools {
     }
 
     public record WeeklyPlan(LocalDate startDate, LocalDate endDate, int totalScheduled, long completedCount,
-                             long skippedCount, List<DailyPlan> days) {}
+                             long skippedCount, List<DailyPlan> days, boolean truncated) {}
 
-    public record GoalList(List<GoalSummary> goals) {}
+    public record GoalList(List<GoalSummary> goals, boolean truncated) {}
 
     public record GoalSummary(long goalId, String name, GoalType type, LocalDate startDate, LocalDate endDate,
                               int targetCount, long currentCount, double completionPercentage,

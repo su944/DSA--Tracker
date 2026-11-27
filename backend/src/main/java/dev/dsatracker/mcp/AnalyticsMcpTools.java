@@ -42,11 +42,12 @@ public class AnalyticsMcpTools {
     public TopicProgressList getTopicProgress(
             @McpToolParam(required = false, description = "Date range: 7, 30, 90, or all. Default: all.") String range) {
         String selected = range == null ? "all" : range;
-        var topics = reports.topics(selected).stream()
+        var rows = reports.topics(selected, 51);
+        var topics = rows.stream().limit(50)
                 .map(topic -> new TopicProgress(topic.topicId(), topic.name(), topic.total(), topic.solved(),
                         topic.remaining(), topic.total() - topic.remaining(), percentage(topic.solved(), topic.total())))
                 .toList();
-        return new TopicProgressList(selected, topics);
+        return new TopicProgressList(selected, topics, rows.size() > 50);
     }
 
     @McpTool(name = "get_difficulty_progress",
@@ -72,10 +73,11 @@ public class AnalyticsMcpTools {
     public SolvingActivity getSolvingActivity(
             @McpToolParam(required = false, description = "Date range: 7, 30, 90, or all. Default: 30.") String range) {
         String selected = range == null ? "30" : range;
-        var activity = reports.activity(selected);
+        var window = reports.activityWindow(selected);
+        var activity = window.activity();
         var days = activity.days().stream().map(day -> new SolvingDay(day.date(), day.solved())).toList();
         return new SolvingActivity(selected, activity.startDate(), activity.endDate(), days,
-                days.stream().mapToLong(SolvingDay::solvedCount).sum());
+                window.total(), window.truncated());
     }
 
     @McpTool(name = "get_recent_problems",
@@ -98,7 +100,7 @@ public class AnalyticsMcpTools {
     public record DashboardSummary(long totalProblems, long solved, long attempted, long notStarted,
                                    double solvedPercentage) {}
 
-    public record TopicProgressList(String range, List<TopicProgress> topics) {}
+    public record TopicProgressList(String range, List<TopicProgress> topics, boolean truncated) {}
 
     public record TopicProgress(long topicId, String topicName, long totalProblems, long solvedProblems,
                                 long unsolvedProblems, long solvedProblemsAllTime, double solvedPercentage) {}
@@ -108,7 +110,7 @@ public class AnalyticsMcpTools {
     public record DifficultyProgress(Difficulty difficulty, long solvedCount) {}
 
     public record SolvingActivity(String range, @Schema(nullable = true) LocalDate startDate, LocalDate endDate,
-                                  List<SolvingDay> days, long totalSolvesInRange) {}
+                                  List<SolvingDay> days, long totalSolvesInRange, boolean truncated) {}
 
     public record SolvingDay(LocalDate date, long solvedCount) {}
 

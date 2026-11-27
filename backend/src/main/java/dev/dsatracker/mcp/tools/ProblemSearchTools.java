@@ -70,7 +70,9 @@ public class ProblemSearchTools {
                     readOnlyHint = true, destructiveHint = false, idempotentHint = true, openWorldHint = false))
     public TopicList listTopics(
             @McpToolParam(required = false, description = "Case-insensitive topic name substring.") String query) {
-        return new TopicList(topics.search(query).stream().map(topic -> new TopicItem(topic.id(), topic.name())).toList());
+        var rows = topics.search(query, 51);
+        return new TopicList(rows.stream().limit(50).map(topic -> new TopicItem(topic.id(), topic.name())).toList(),
+                rows.size() > 50);
     }
 
     private static List<String> topicNames(ProblemView problem) {
@@ -96,7 +98,7 @@ public class ProblemSearchTools {
     public record Progress(ProgressStatus status, @Schema(nullable = true) LocalDate attemptedDate,
                            @Schema(nullable = true) LocalDate solvedDate, String comments) {}
 
-    public record TopicList(List<TopicItem> topics) {}
+    public record TopicList(List<TopicItem> topics, boolean truncated) {}
 
     public record TopicItem(long id, String name) {}
 }
