@@ -70,4 +70,13 @@ public final class GoalDtos {
                     GoalProgress.from(tally.getSolvedCount(), goal.targetCount), goal.difficulty);
         }
     }
+
+    public enum ProblemFilter { ALL, COUNTED, OUTSIDE, ATTEMPTED, NOT_STARTED }
+    public enum ProblemSort { LEETCODE_ID, DIFFICULTY, STATUS }
+    public record ProblemTopic(long id, String name) {}
+    public record GoalProblem(long id, long leetcodeId, String title, Difficulty difficulty, java.util.List<ProblemTopic> topics,
+                              dev.dsatracker.catalog.ProgressStatus status, LocalDate attemptedDate, LocalDate solvedDate,
+                              boolean countsTowardGoal, boolean solvedOutsideRange) {}
+    public record GoalProblemPage(java.util.List<GoalProblem> items, int page, int size, long totalItems, int totalPages,
+                                  long totalMatching, long counted) {}
 }

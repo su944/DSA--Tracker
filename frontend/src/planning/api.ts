@@ -1,4 +1,4 @@
-import { request, type ProgressStatus, type Topic } from '../catalog/api'
+import { request, type Difficulty, type ProgressStatus, type Topic } from '../catalog/api'
 
 export const goalTypes = { DAILY: 'Daily', WEEKLY: 'Weekly', CUSTOM: 'Custom range' } as const
 export type GoalType = keyof typeof goalTypes
@@ -18,7 +18,30 @@ export type Goal = {
   startDate: string
   endDate: string
   topic: Topic | null
+  difficulty: Difficulty | null
   progress: GoalProgress
+}
+
+export const goalProblemFilters = {
+  ALL: 'All', COUNTED: 'Counts toward goal', OUTSIDE: 'Solved outside goal range',
+  ATTEMPTED: 'Attempted', NOT_STARTED: 'Not started',
+} as const
+export const goalProblemSorts = { LEETCODE_ID: 'LeetCode ID', DIFFICULTY: 'Difficulty', STATUS: 'Progress status' } as const
+export type GoalProblemFilter = keyof typeof goalProblemFilters
+export type GoalProblemSort = keyof typeof goalProblemSorts
+export type GoalProblem = {
+  id: number; leetcodeId: number; title: string; difficulty: Difficulty; topics: Pick<Topic, 'id' | 'name'>[]
+  status: ProgressStatus; attemptedDate: string | null; solvedDate: string | null
+  countsTowardGoal: boolean; solvedOutsideRange: boolean
+}
+export type GoalProblemPage = {
+  items: GoalProblem[]; page: number; size: number; totalItems: number; totalPages: number
+  totalMatching: number; counted: number
+}
+
+export function listGoalProblems(goalId: number, filter: GoalProblemFilter, sort: GoalProblemSort, page: number, signal?: AbortSignal) {
+  const query = new URLSearchParams({ filter, sort, page: String(page) })
+  return request<GoalProblemPage>(`goals/${goalId}/problems?${query}`, { signal })
 }
 
 export type PlannerView = 'DAY' | 'WEEK'

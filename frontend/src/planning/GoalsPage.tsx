@@ -1,10 +1,11 @@
 import { useState, type FormEvent } from 'react'
-import { listTopics, type Topic } from '../catalog/api'
+import { difficulties, listTopics, type Topic } from '../catalog/api'
 import { asError, FormError, LoadMessage } from '../catalog/components'
 import { useResource } from '../catalog/useResource'
 import { deleteGoal, goalTypes, listGoals, saveGoal, type Goal, type GoalInput, type GoalType } from './api'
 import { dateRange } from './dates'
 import { GoalProgressMeter } from './GoalProgressMeter'
+import { GoalProblems } from './GoalProblems'
 
 export function GoalsPage() {
   const goals = useResource(listGoals)
@@ -60,7 +61,7 @@ export function GoalsPage() {
           {goals.result.data.map((goal) => (
             <li key={goal.id} className="catalog-panel planning-goal">
               <div>
-                <p className="planning-meta">{goalTypes[goal.type]} · {goal.topic?.name ?? 'All topics'}</p>
+                <p className="planning-meta">{goalTypes[goal.type]} · {goal.topic?.name ?? 'All topics'} · {goal.difficulty ? difficulties[goal.difficulty] : 'All difficulties'}</p>
                 <h2>{goal.name}</h2>
                 <p className="body-text">{dateRange(goal.startDate, goal.endDate)}</p>
                 <GoalProgressMeter goal={goal} />
@@ -88,6 +89,7 @@ export function GoalsPage() {
                     }}>Delete</button>
                 </div>
               )}
+              <GoalProblems goal={goal} />
             </li>
           ))}
         </ul>

@@ -66,6 +66,59 @@ class PlanningIntegrationTest {
     }
 
     @Test
+    void listsGoalProblemsWithDistinctCountsDateBoundsAndStablePages() throws Exception {
+        long graphs = createTopic("Graphs");
+        long arrays = createTopic("Arrays");
+        long last = createProblem(200, graphs, arrays);
+        long first = createProblem(127, graphs);
+        long old = createProblem(207, graphs);
+        long future = createProblem(210, graphs);
+        long attempted = createProblem(211, graphs);
+        createProblem(212, graphs);
+        createProblem(1, arrays);
+        jdbc.update("UPDATE problems SET difficulty='HARD' WHERE id = ?", first);
+        solve(first, "2026-11-17");
+        solve(last, "2026-11-19");
+        solve(old, "2026-11-16");
+        solve(future, "2026-11-20");
+        progress(attempted, Map.of("status", "ATTEMPTED", "attemptedDate", "2026-11-18"));
+        long goal = createGoal("CUSTOM", "2026-11-17", "2026-11-19", 1, graphs);
+
+        mvc.perform(get("/api/v1/goals/{id}/problems", goal).param("size", "1").param("page", "1"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalMatching").value(6))
+                .andExpect(jsonPath("$.totalPages").value(6)).andExpect(jsonPath("$.counted").value(2))
+                .andExpect(jsonPath("$.items[0].leetcodeId").value(200))
+                .andExpect(jsonPath("$.items[0].topics.length()").value(2))
+                .andExpect(jsonPath("$.items[0].countsTowardGoal").value(true));
+        mvc.perform(get("/api/goals/{id}/progress", goal)).andExpect(jsonPath("$.solvedCount").value(2));
+        mvc.perform(get("/api/goals/{id}/problems", goal).param("filter", "COUNTED"))
+                .andExpect(jsonPath("$.totalItems").value(2)).andExpect(jsonPath("$.items[0].leetcodeId").value(127));
+        mvc.perform(get("/api/goals/{id}/problems", goal).param("filter", "OUTSIDE"))
+                .andExpect(jsonPath("$.totalItems").value(2)).andExpect(jsonPath("$.totalMatching").value(6))
+                .andExpect(jsonPath("$.items[0].countsTowardGoal").value(false))
+                .andExpect(jsonPath("$.items[0].solvedOutsideRange").value(true))
+                .andExpect(jsonPath("$.items[1].solvedDate").value("2026-11-20"));
+        mvc.perform(get("/api/goals/{id}/problems", goal).param("filter", "ATTEMPTED"))
+                .andExpect(jsonPath("$.totalItems").value(1)).andExpect(jsonPath("$.items[0].attemptedDate").value("2026-11-18"));
+        mvc.perform(get("/api/goals/{id}/problems", goal).param("filter", "NOT_STARTED"))
+                .andExpect(jsonPath("$.totalItems").value(1)).andExpect(jsonPath("$.items[0].leetcodeId").value(212));
+        mvc.perform(get("/api/goals/{id}/problems", goal).param("sort", "STATUS"))
+                .andExpect(jsonPath("$.items[0].leetcodeId").value(212)).andExpect(jsonPath("$.items[1].leetcodeId").value(211));
+        mvc.perform(get("/api/goals/{id}/problems", goal).param("sort", "DIFFICULTY"))
+                .andExpect(jsonPath("$.items[0].leetcodeId").value(200)).andExpect(jsonPath("$.items[5].leetcodeId").value(127));
+        mvc.perform(get("/api/goals/{id}/problems", goal).param("size", "101")).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/goals/{id}/problems", 999999)).andExpect(status().isNotFound());
+
+        long all = createGoal("DAILY", "2026-11-17", null, 1, null);
+        mvc.perform(get("/api/goals/{id}/problems", all)).andExpect(jsonPath("$.totalMatching").value(7));
+        jdbc.update("UPDATE problems SET difficulty='HARD' WHERE leetcode_id=1");
+        jdbc.update("UPDATE goals SET difficulty='HARD' WHERE id IN (?, ?)", all, goal);
+        mvc.perform(get("/api/goals/{id}/problems", all)).andExpect(jsonPath("$.totalMatching").value(2));
+        mvc.perform(get("/api/goals/{id}/problems", goal)).andExpect(jsonPath("$.totalMatching").value(1))
+                .andExpect(jsonPath("$.items[0].id").value(first));
+    }
+
+    @Test
     void createsReadsEditsAndDeletesGoals() throws Exception {
         long id = createGoal("DAILY", "2026-11-20", null, 2, null);
         mvc.perform(get("/api/v1/goals/{id}", id)).andExpect(status().isOk())

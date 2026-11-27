@@ -472,3 +472,14 @@ h1 {
   .tracker-date-form { width: 100%; }
   .tracker-date-form label { flex: 1 1 9rem; }
 }
+
+.goal-problems { flex: 1 1 100%; min-width: 0; border-top: 1px solid #e8edf4; padding-top: 12px; }
+.goal-problems summary { cursor: pointer; width: fit-content; font-weight: 700; }
+.goal-problem-controls { margin: 12px 0; }
+.goal-problem-row { grid-template-columns: minmax(0, 2fr) auto auto minmax(130px, 1fr); }
+.goal-problem-row .problem-name { overflow-wrap: anywhere; }
+.goal-problem-result:empty { display: none; }
+@media (max-width: 640px) {
+  .goal-problem-row { grid-template-columns: auto 1fr; }
+  .goal-problem-row .problem-name, .goal-problem-result { grid-column: 1 / -1; }
+}

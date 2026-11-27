@@ -57,6 +57,29 @@ public class GoalService {
         return GoalView.from(goals.findWithProgress(id).orElseThrow(() -> ApiException.missing("Goal not found.")));
     }
 
+    @Transactional(readOnly = true)
+    public GoalDtos.GoalProblemPage problems(long id, GoalDtos.ProblemFilter filter, GoalDtos.ProblemSort sort, int page, int size) {
+        var tally = goals.findWithProgress(id).orElseThrow(() -> ApiException.missing("Goal not found."));
+        if (page < 0 || size < 1 || size > 100) {
+            throw ApiException.invalid("pagination", "Use a non-negative page and a page size between 1 and 100.");
+        }
+        var result = goals.goalProblems(id, filter.name(), sort.name(), PageRequest.of(page, size));
+        var ids = result.getContent().stream().map(GoalRepository.ProblemRow::getId).toList();
+        var topicsByProblem = new java.util.HashMap<Long, List<GoalDtos.ProblemTopic>>();
+        if (!ids.isEmpty()) {
+            for (var topic : goals.problemTopics(ids)) {
+                topicsByProblem.computeIfAbsent(topic.getProblemId(), ignored -> new java.util.ArrayList<>())
+                        .add(new GoalDtos.ProblemTopic(topic.getId(), topic.getName()));
+            }
+        }
+        var items = result.getContent().stream().map(row -> new GoalDtos.GoalProblem(row.getId(), row.getLeetcodeId(),
+                row.getTitle(), row.getDifficulty(), topicsByProblem.getOrDefault(row.getId(), List.of()), row.getStatus(),
+                row.getAttemptedDate(), row.getSolvedDate(), row.getCountsTowardGoal(), row.getSolvedOutsideRange())).toList();
+        long matching = filter == GoalDtos.ProblemFilter.ALL ? result.getTotalElements() : goals.countMatchingProblems(id);
+        return new GoalDtos.GoalProblemPage(items, page, size, result.getTotalElements(), result.getTotalPages(),
+                matching, tally.getSolvedCount());
+    }
+
     @Transactional
     public GoalView create(GoalInput input) {
         var goal = new Goal();

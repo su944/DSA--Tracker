@@ -36,6 +36,8 @@ Validate individual fields at the application boundary and enforce domain rules 
 
 Store date-only values as ISO `YYYY-MM-DD` text and represent them as `LocalDate` in Java. Use transactions to keep dependent rows consistent when progress changes or a full restore replaces the dataset. Index the columns used to query by date and topic. Derive goal counts and dashboard summaries from current records without a separate analytics store.
 
+The Goals page loads its problem list on expansion. `GET /api/v1/goals/{id}/problems` (also available under `/api/goals`) accepts zero-based `page`, `size` up to 100, `filter` (`ALL`, `COUNTED`, `OUTSIDE`, `ATTEMPTED`, `NOT_STARTED`), and `sort` (`LEETCODE_ID`, `DIFFICULTY`, `STATUS`). It returns `items`, `page`, `size`, `totalPages`, the filtered `totalItems`, the catalog `totalMatching`, and the period `counted` total. Problem rows include topics, progress dates, and flags for counted and outside-period solves. The repository shares the catalog restrictions and inclusive SOLVED-date rule with goal progress, sorts ties by LeetCode ID, and loads the topics for a page in one query.
+
 ## Import and export contracts
 
 - Use one logical, versioned snapshot for complete exports. JSON represents it directly. The CSV archive contains separate CSV files for problems, topics, problem-topic links, progress, goals, planner entries, and revisions, plus a format version file.
